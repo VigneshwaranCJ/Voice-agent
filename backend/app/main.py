@@ -17,8 +17,12 @@ configure_logging(settings.log_level, json=settings.environment != "development"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.environment != "development" and settings.jwt_secret == "dev-only-change-me":
-        raise RuntimeError("JWT_SECRET must be set outside development")
+    if settings.is_production:
+        errors, warnings = settings.production_problems()
+        for w in warnings:
+            log.warning("production_config", issue=w)
+        if errors:
+            raise RuntimeError("Unsafe production config: " + "; ".join(errors))
     if settings.is_sqlite or settings.environment == "development":
         await create_all()  # production: `alembic upgrade head` runs before the app starts
     if settings.seed_demo_data and settings.environment == "development":
@@ -35,7 +39,9 @@ async def lifespan(_: FastAPI):
     await get_sarvam().aclose()
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+# Interactive API docs only in development (they advertise every endpoint and schema).
+_docs = {} if not settings.is_production else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan, **_docs)
 app.add_middleware(RateLimitMiddleware, per_minute=settings.rate_limit_per_minute)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])

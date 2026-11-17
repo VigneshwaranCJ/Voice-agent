@@ -1,0 +1,27 @@
+# Production overrides. Use together with the base file:
+#   docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Put a TLS terminator (Caddy, Cloudflare, a cloud load balancer) in front of port 80 — browsers only allow
+# the microphone on HTTPS.
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    ports: !reset []          # database is internal only
+    restart: unless-stopped
+  redis:
+    ports: !reset []          # internal only
+    restart: unless-stopped
+  backend:
+    env_file: .env.production
+    environment:
+      ENVIRONMENT: production
+      # Bundled Postgres by default; set DATABASE_URL in .env.production for a managed database.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://voicecare:${POSTGRES_PASSWORD}@postgres:5432/voicecare}
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env.production}
+      FORWARDED_ALLOW_IPS: "*"  # only nginx can reach the backend (no published port)
+    ports: !reset []
+    restart: unless-stopped
+  frontend:
+    ports: !override ["80:80"]
+    restart: unless-stopped

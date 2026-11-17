@@ -41,6 +41,33 @@ class Settings(BaseSettings):
     seed_demo_data: bool = True
 
     @property
+    def is_production(self) -> bool:
+        return self.environment != "development"
+
+    def production_problems(self) -> tuple[list[str], list[str]]:
+        """(errors, warnings) for a non-development deploy. Errors stop the server from starting."""
+        errors, warnings = [], []
+        if self.jwt_secret == "dev-only-change-me" or len(self.jwt_secret) < 32:
+            errors.append("JWT_SECRET must be a random value of at least 32 characters")
+        try:
+            from cryptography.fernet import Fernet
+
+            Fernet((self.encryption_key or "").encode())
+        except Exception:
+            errors.append("ENCRYPTION_KEY must be a valid Fernet key")
+        if self.is_sqlite:
+            errors.append("DATABASE_URL must point to PostgreSQL, not SQLite")
+        if any(o == "*" or "localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
+            warnings.append("CORS_ORIGINS includes '*' or localhost; set it to your dashboard's https origin")
+        if any(o.startswith("http://") for o in self.cors_origins if "localhost" not in o):
+            warnings.append("CORS_ORIGINS uses http://; browsers need https for the microphone")
+        if not self.sarvam_configured:
+            warnings.append("SARVAM_API_KEY is not set; voice and AI replies are disabled")
+        if not self.redis_url:
+            warnings.append("REDIS_URL is not set; live call state is in-process (single replica only)")
+        return errors, warnings
+
+    @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
 
