@@ -83,16 +83,23 @@ export default function TalkingCharacter(props: Props) {
   const live = !!state && state !== 'ended'
 
   // ---- position & dragging ------------------------------------------------------------------------
-  const clamp = useCallback((p: { x: number; y: number }) => ({
-    x: Math.max(8, Math.min(window.innerWidth - size - 8, p.x)),
-    y: Math.max(8, Math.min(window.innerHeight - size * 1.25 - 8, p.y)),
-  }), [size])
+  // Keep the whole widget on screen: the speech bubble above it and the toolbar below it included.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const bubbleRef = useRef<HTMLDivElement>(null)
+  const clamp = useCallback((p: { x: number; y: number }) => {
+    const above = (bubbleRef.current?.offsetHeight ?? 48) + 8
+    const height = rootRef.current?.offsetHeight ?? size * 1.25 + 52
+    return {
+      x: Math.max(8, Math.min(window.innerWidth - size - 8, p.x)),
+      y: Math.max(8 + above, Math.min(window.innerHeight - height - 8, p.y)),
+    }
+  }, [size])
   const [pos, setPos] = useState(() => loadPos(posKey) ?? { x: window.innerWidth - size - 40, y: window.innerHeight - size * 1.3 - 40 })
   const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean; long: boolean } | null>(null)
   const longTimer = useRef<number | undefined>(undefined)
   const [editing, setEditing] = useState(false)
 
-  useEffect(() => { setPos((p) => clamp(p)) }, [clamp])
+  useEffect(() => { setPos((p) => clamp(p)) }, [clamp, look.style])
   useEffect(() => {
     const onResize = () => setPos((p) => clamp(p))
     window.addEventListener('resize', onResize)
@@ -102,7 +109,7 @@ export default function TalkingCharacter(props: Props) {
 
   const onPointerDown = (e: RPointerEvent) => {
     if (e.button !== 0) return
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
     drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, sx: e.clientX, sy: e.clientY, moved: false, long: false }
     // Long-press (touch or mouse) opens the editor.
     window.clearTimeout(longTimer.current)
@@ -118,21 +125,25 @@ export default function TalkingCharacter(props: Props) {
     window.clearTimeout(longTimer.current)
     setPos(clamp({ x: e.clientX - d.dx, y: e.clientY - d.dy }))
   }
-  const onPointerUp = () => {
+  const onPointerUp = (e: RPointerEvent) => {
     const d = drag.current
     drag.current = null
     window.clearTimeout(longTimer.current)
     if (!d || d.long) return
-    if (d.moved) savePos(pos)
-    else if (!disabled) onActivate()
+    if (d.moved) {
+      // Save where the pointer actually ended, not the last rendered position (a fast flick can end
+      // before React has rendered the final move).
+      const p = clamp({ x: e.clientX - d.dx, y: e.clientY - d.dy })
+      setPos(p); savePos(p)
+    } else if (!disabled) onActivate()
   }
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 60 : 20
     const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
     if (moves[e.key]) {
       e.preventDefault()
-      const p = clamp({ x: pos.x + moves[e.key][0], y: pos.y + moves[e.key][1] })
-      setPos(p); savePos(p)
+      const [dx, dy] = moves[e.key]
+      setPos((cur) => { const p = clamp({ x: cur.x + dx, y: cur.y + dy }); savePos(p); return p })
     } else if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
       e.preventDefault(); onActivate()
     } else if (e.key === 'e' || e.key === 'E') {
@@ -169,7 +180,15 @@ export default function TalkingCharacter(props: Props) {
   realDriver.current.state = state
   realDriver.current.reaction = reaction ?? null
   const realLook = { ...DEFAULT_REALISTIC, ...(look.realistic ?? {}) }
-  const setReal = (patch: Partial<RealisticLook>) => onLookChange({ ...look, realistic: { ...realLook, ...patch } })
+  // Edits build on the latest look we sent up, so two quick clicks before the parent re-renders
+  // don't overwrite each other.
+  const latestLook = useRef(look)
+  useEffect(() => { latestLook.current = look }, [look])
+  const commitLook = (l: CharacterLook) => { latestLook.current = l; onLookChange(l) }
+  const setReal = (patch: Partial<RealisticLook>) => {
+    const cur = latestLook.current
+    commitLook({ ...cur, realistic: { ...DEFAULT_REALISTIC, ...(cur.realistic ?? {}), ...patch } })
+  }
 
   useEffect(() => {
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -284,7 +303,7 @@ export default function TalkingCharacter(props: Props) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [editing])
-  const set = <K extends keyof CharacterLook>(k: K, v: CharacterLook[K]) => onLookChange({ ...look, [k]: v })
+  const set = <K extends keyof CharacterLook>(k: K, v: CharacterLook[K]) => commitLook({ ...latestLook.current, [k]: v })
 
   const status = disabled ? 'Pick an agent first'
     : !state || state === 'ended' ? `Tap me to talk to ${look.name}`
@@ -301,9 +320,9 @@ export default function TalkingCharacter(props: Props) {
     setPos(p); savePos(p)
   }
   return (
-    <div className="pointer-events-none fixed z-40 select-none" style={{ left: pos.x, top: pos.y, width: size }}>
+    <div ref={rootRef} className="pointer-events-none fixed z-40 select-none" style={{ left: pos.x, top: pos.y, width: size }}>
       {/* speech bubble */}
-      <div className={`glass pointer-events-auto absolute bottom-full mb-2 w-64 rounded-2xl px-4 py-2.5 text-[13px] leading-snug text-slate-800 shadow-[var(--shadow-float)] ring-1 ring-black/5 ${bubbleLeft ? 'right-1/3' : 'left-1/3'}`}
+      <div ref={bubbleRef} className={`glass pointer-events-auto absolute bottom-full mb-2 w-64 rounded-2xl px-4 py-2.5 text-[13px] leading-snug text-slate-800 shadow-[var(--shadow-float)] ring-1 ring-black/5 ${bubbleLeft ? 'right-1/3' : 'left-1/3'}`}
         aria-live="polite">
         <span className="line-clamp-3">{status}</span>
       </div>
@@ -356,7 +375,7 @@ export default function TalkingCharacter(props: Props) {
           <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={() => setEditing(false)} />
           <div className="animate-rise relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_30px_80px_rgb(0_0_0/0.25)]" style={{ animationDuration: '0.45s' }}>
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <button className="text-sm text-slate-500 hover:text-slate-800" onClick={() => onLookChange({ ...DEFAULT_LOOK, name: look.name, size: look.size })}>Reset</button>
+              <button className="text-sm text-slate-500 hover:text-slate-800" onClick={() => commitLook({ ...DEFAULT_LOOK, name: latestLook.current.name, size: latestLook.current.size })}>Reset</button>
               <h2 className="text-[17px] font-semibold text-slate-900">Edit character</h2>
               <button className="text-sm font-semibold text-brand-500 hover:text-brand-600" onClick={() => setEditing(false)}>Done</button>
             </div>

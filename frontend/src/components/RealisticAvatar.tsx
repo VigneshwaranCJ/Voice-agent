@@ -48,7 +48,7 @@ const MATERIAL_GROUPS: Record<keyof Pick<RealisticLook, 'skin' | 'hair' | 'outfi
 }
 
 const VIEW_OPT: Record<RealisticFraming, Record<string, number>> = {
-  head: { cameraDistance: 0.6, cameraY: 0.05 },
+  head: { cameraDistance: 1, cameraY: 0 },
   upper: { cameraDistance: -1.2, cameraY: -0.1 },
 }
 /** Jump the camera to a framing without TalkingHead's eased transition. */
@@ -60,6 +60,11 @@ function frame(th: TalkingHeadT, view: RealisticFraming) {
 const VISEMES = ['viseme_aa', 'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U', 'viseme_aa', 'viseme_E', 'viseme_O'] as const
 const CLOSERS = ['viseme_PP', 'viseme_FF', 'viseme_nn', 'viseme_DD', 'viseme_SS'] as const
 const MOUTH_KEYS = [...new Set([...VISEMES, ...CLOSERS, 'jawOpen'])]
+
+// TalkingHead makes an AudioContext per instance and dispose() never closes it, so every editor
+// preview would leak one. All instances share this one (it only plays silence for us anyway).
+let sharedAudioCtx: AudioContext | null = null
+const audioCtx = () => (sharedAudioCtx ??= new AudioContext())
 
 export interface RealisticDriver {
   state: AgentState | null
@@ -107,6 +112,7 @@ export default function RealisticAvatar({ look, width, height, driver, className
         const { TalkingHead } = await import('@met4citizen/talkinghead')
         if (cancelled || !host.current) return
         th = new TalkingHead(host.current, {
+          audioCtx: audioCtx(),
           lipsyncModules: [],          // we drive the mouth from audio loudness; no TTS, no word timings
           cameraView: lookRef.current.framing,
           ...VIEW_OPT[lookRef.current.framing],
@@ -115,6 +121,7 @@ export default function RealisticAvatar({ look, width, height, driver, className
           avatarIdleEyeContact: 0.6, avatarSpeakingEyeContact: 0.8,
           lightAmbientIntensity: 2.2, lightDirectIntensity: 25,
           modelFPS: 30,
+          modelPixelRatio: Math.min(2, window.devicePixelRatio || 1), // crisp on high-DPI screens
         })
         await th.showAvatar(
           { url: REALISTIC_MODEL_URL, body: 'F', avatarMood: lookRef.current.mood, lipsyncLang: 'en', baseline: { headRotateX: -0.01, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 } },
@@ -127,8 +134,11 @@ export default function RealisticAvatar({ look, width, height, driver, className
         installDriver(th, driver)
         setStatus('ready')
       } catch (err) {
+        // Unmounted mid-load (e.g. the editor closed): dispose() already tore the renderer down, so a
+        // throw from the half-finished load is expected and not worth reporting.
+        if (cancelled) return
         console.error('Realistic avatar failed to load', err)
-        if (!cancelled) setStatus('error')
+        setStatus('error')
       }
     })()
     return () => {
