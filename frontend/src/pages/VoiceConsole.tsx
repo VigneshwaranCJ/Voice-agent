@@ -34,7 +34,7 @@ export default function VoiceConsole() {
 
   // Character look is saved per agent in this browser.
   const agent = agents?.find((a) => a.id === agentId)
-  const lookKey = `character:${agentId}:look`
+  const lookKey = `character:v2:${agentId}:look`
   const [look, setLook] = useState<CharacterLook>(DEFAULT_LOOK)
   useEffect(() => {
     if (!agentId) return

@@ -18,18 +18,22 @@ import type { AgentState } from '../services/voiceClient'
 import {
   DEFAULT_MANGA, LIPSYNC_MOUTHS, MOUTH, MangaEditor, MangaFaceAvatar, mouthUrl, preloadMouths, type MangaLook,
 } from './MangaFaceAvatar'
+import RealisticAvatar, {
+  DEFAULT_REALISTIC, REAL_HAIR, REAL_OUTFIT, REAL_SKIN, type RealisticDriver, type RealisticLook, type RealisticMood,
+} from './RealisticAvatar'
 
 export type HairStyle = 'short' | 'long' | 'bun' | 'curly' | 'none'
 export type Accessory = 'headset' | 'glasses' | 'none'
 export type CharacterSize = 'sm' | 'md' | 'lg'
 export type Reaction = 'surprised' | 'concerned' | 'goodbye' | null
 
-export type CharacterStyle = 'manga' | 'classic'
+export type CharacterStyle = 'realistic' | 'manga' | 'classic'
 
 export interface CharacterLook {
   name: string
   style: CharacterStyle
   manga: MangaLook
+  realistic: RealisticLook
   skin: string
   hairStyle: HairStyle
   hairColor: string
@@ -39,7 +43,7 @@ export interface CharacterLook {
 }
 
 export const DEFAULT_LOOK: CharacterLook = {
-  name: 'Assistant', style: 'manga', manga: DEFAULT_MANGA, skin: '#c68863', hairStyle: 'long', hairColor: '#2b1d16', outfit: '#4f46e5',
+  name: 'Assistant', style: 'realistic', manga: DEFAULT_MANGA, realistic: DEFAULT_REALISTIC, skin: '#c68863', hairStyle: 'long', hairColor: '#2b1d16', outfit: '#4f46e5',
   accessory: 'headset', size: 'md',
 }
 
@@ -161,6 +165,11 @@ export default function TalkingCharacter(props: Props) {
   useEffect(() => { if (look.style === 'manga') preloadMouths(look.manga.skin) }, [look.style, look.manga.skin])
   const levelsRef = useRef(levels)
   levelsRef.current = levels
+  const realDriver = useRef<RealisticDriver>({ state, reaction: reaction ?? null, level: () => levelsRef.current().agent })
+  realDriver.current.state = state
+  realDriver.current.reaction = reaction ?? null
+  const realLook = { ...DEFAULT_REALISTIC, ...(look.realistic ?? {}) }
+  const setReal = (patch: Partial<RealisticLook>) => onLookChange({ ...look, realistic: { ...realLook, ...patch } })
 
   useEffect(() => {
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -311,7 +320,14 @@ export default function TalkingCharacter(props: Props) {
         onContextMenu={(e) => { e.preventDefault(); setEditing(true) }}
         onKeyDown={onKeyDown}
       >
-        {look.style === 'manga' ? (
+        {look.style === 'realistic' ? (
+          <div className="relative">
+            <RealisticAvatar look={realLook} driver={realDriver} width={size * 1.15} height={size * 1.25} className="-mx-[7.5%]" />
+            {live && <span className={`absolute bottom-3 right-4 h-3 w-3 rounded-full ring-2 ring-white ${muted ? 'bg-rose-500' : 'bg-emerald-400'}`} />}
+            {state === 'thinking' && <span className="absolute right-3 top-2 animate-pulse text-2xl text-slate-400">…</span>}
+            {state === 'listening' && <span className="pointer-events-none absolute inset-x-[10%] bottom-0 h-1 animate-pulse rounded-full bg-emerald-400/70" />}
+          </div>
+        ) : look.style === 'manga' ? (
           <div className="relative">
             <MangaFaceAvatar look={look.manga} refs={mf} width={size} />
             {live && <span className={`absolute bottom-2 right-3 h-3 w-3 rounded-full ring-2 ring-white ${muted ? 'bg-rose-500' : 'bg-emerald-400'}`} />}
@@ -347,15 +363,17 @@ export default function TalkingCharacter(props: Props) {
             <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
               {/* live preview */}
               <div className="flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-slate-50 to-slate-100 p-8">
-                <div className="rounded-full bg-white/70 p-3 shadow-[var(--shadow-card)]">
-                  {look.style === 'manga'
+                <div className="rounded-[2rem] bg-white/70 p-3 shadow-[var(--shadow-card)]">
+                  {look.style === 'realistic'
+                    ? <RealisticAvatar look={realLook} width={220} height={260} />
+                    : look.style === 'manga'
                     ? <MangaFaceAvatar look={look.manga} refs={previewManga} width={200} />
                     : <div style={{ width: 200 }}><CharacterSvg look={look} r={previewSvg} muted={false} live={false} /></div>}
                 </div>
                 <input aria-label="Character name" className="w-56 bg-transparent text-center text-2xl font-semibold tracking-tight text-slate-900 outline-none placeholder:text-slate-300"
                   value={look.name} maxLength={24} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
                 <div className="inline-flex rounded-full bg-slate-200/70 p-1">
-                  {(['manga', 'classic'] as CharacterStyle[]).map((st) => (
+                  {(['realistic', 'manga', 'classic'] as CharacterStyle[]).map((st) => (
                     <button key={st} onClick={() => set('style', st)} aria-pressed={look.style === st}
                       className={`rounded-full px-4 py-1 text-sm capitalize transition-all duration-300 ${look.style === st ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-600'}`}>{st}</button>
                   ))}
@@ -363,7 +381,24 @@ export default function TalkingCharacter(props: Props) {
               </div>
               {/* controls */}
               <div className="min-h-0 space-y-4 overflow-y-auto p-6 text-sm">
-                {look.style === 'manga' ? (
+                {look.style === 'realistic' ? (
+                  <>
+                    <NamedSwatches label="Skin tone" options={REAL_SKIN} value={realLook.skin} onChange={(v) => setReal({ skin: v })} />
+                    <NamedSwatches label="Hair colour" options={REAL_HAIR} value={realLook.hair} onChange={(v) => setReal({ hair: v })} />
+                    <NamedSwatches label="Outfit" options={REAL_OUTFIT} value={realLook.outfit} onChange={(v) => setReal({ outfit: v })} />
+                    <div>
+                      <span className="label">Expression</span>
+                      <Segmented options={['happy', 'neutral', 'love'] as RealisticMood[]} value={realLook.mood} onChange={(v) => setReal({ mood: v })} />
+                    </div>
+                    <div>
+                      <span className="label">Framing</span>
+                      <Segmented options={['upper', 'head'] as RealisticLook['framing'][]} value={realLook.framing} onChange={(v) => setReal({ framing: v })} />
+                    </div>
+                    <p className="text-[11px] leading-snug text-slate-400">
+                      3D: <a className="underline" href="https://github.com/met4citizen/TalkingHead" target="_blank" rel="noreferrer">TalkingHead</a> by Mika Suominen (MIT) · model made with MPFB/MakeHuman (CC0)
+                    </p>
+                  </>
+                ) : look.style === 'manga' ? (
                   <>
                     <MangaEditor look={look.manga} onChange={(v) => set('manga', v)} />
                     <p className="text-[11px] leading-snug text-slate-400">
@@ -397,6 +432,23 @@ export default function TalkingCharacter(props: Props) {
         </div>,
         document.body,
       )}
+    </div>
+  )
+}
+
+function NamedSwatches({ label, options, value, onChange }: {
+  label: string; options: { v: string; n: string }[]; value: string; onChange: (v: string) => void
+}) {
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => (
+          <button key={o.v} type="button" title={o.n} aria-label={o.n} aria-pressed={value === o.v} onClick={() => onChange(o.v)}
+            className={`h-8 w-8 rounded-full ring-1 ring-black/10 transition duration-300 active:scale-90 ${value === o.v ? 'outline outline-2 outline-offset-2 outline-brand-500' : ''}`}
+            style={{ background: o.v === '#ffffff' ? 'conic-gradient(#f4d7c4, #c9a27e, #8c6a55, #f4d7c4)' : o.v }} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -437,10 +489,10 @@ function Swatches({ label, options, value, onChange }: { label: string; options:
 
 function Segmented<T extends string>({ options, value, onChange }: { options: T[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="inline-flex flex-wrap gap-0.5 rounded-full bg-slate-100 p-1">
       {options.map((o) => (
-        <button key={o} onClick={() => onChange(o)} aria-pressed={value === o}
-          className={`rounded-md px-2 py-1 text-xs capitalize ring-1 ${value === o ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'}`}>
+        <button key={o} type="button" onClick={() => onChange(o)} aria-pressed={value === o}
+          className={`rounded-full px-3 py-1 text-xs capitalize transition-all duration-300 ${value === o ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
           {o}
         </button>
       ))}
