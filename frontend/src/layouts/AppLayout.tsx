@@ -15,7 +15,7 @@ const NAV = [
 
 function Logo() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
       <rect x="3" y="9" width="2.6" height="6" rx="1.3" fill="currentColor" />
       <rect x="7.6" y="5" width="2.6" height="14" rx="1.3" fill="currentColor" />
       <rect x="12.2" y="7.5" width="2.6" height="9" rx="1.3" fill="currentColor" />
@@ -46,10 +46,10 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen">
-      <header className="glass sticky top-0 z-30 border-b border-black/5">
-        <div className="mx-auto flex h-12 max-w-6xl items-center gap-6 px-5">
+      <header className="glass sticky top-0 z-30 border-b border-black/[0.06] shadow-[0_1px_0_rgb(255_255_255/0.6)_inset]">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-5">
           <NavLink to="/" className="flex items-center gap-2 text-slate-900" aria-label="VoiceCare home">
-            <Logo />
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-[#8e5cf7] text-white shadow-[0_4px_12px_-4px_rgb(0_113_227/0.6)]"><Logo /></span>
             <span className="text-[15px] font-semibold tracking-tight">VoiceCare</span>
           </NavLink>
           <nav className="-mx-2 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
@@ -88,7 +88,9 @@ export default function AppLayout() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-5 pb-24 pt-12">
-        <Outlet key={tenantId ?? 'none'} />
+        <div key={`${tenantId ?? 'none'}:${loc.pathname}`} className="animate-fade">
+          <Outlet key={tenantId ?? 'none'} />
+        </div>
       </main>
     </div>
   )

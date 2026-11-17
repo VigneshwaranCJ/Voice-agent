@@ -24,7 +24,7 @@ export function BusinessProfile() {
   }
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Business Profile" subtitle="Business context given to the agent on every call." />
+      <PageHeader eyebrow="Settings" title="Business Profile" subtitle="Business context given to the agent on every call." />
       <ErrorNote error={err} />
       {msg && <div className="mb-4 text-sm text-emerald-700">{msg}</div>}
       <div className="card grid gap-4 md:grid-cols-2">
@@ -56,7 +56,7 @@ export function Integrations() {
   }
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Integrations" subtitle="Connect the business's own database or API. Credentials are encrypted at rest and never shown again." />
+      <PageHeader eyebrow="Connections" title="Integrations" subtitle="Connect the business's own database or API. Credentials are encrypted at rest and never shown again." />
       <ErrorNote error={err || error} />
       <div className="card mb-6 grid gap-3 md:grid-cols-2">
         <div><label className="label">Name</label><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
@@ -100,7 +100,7 @@ export function Tenants() {
   }
   return (
     <div className="max-w-4xl">
-      <PageHeader title="All Businesses" subtitle="Onboard a business without code changes. Then create its agent under Agents." />
+      <PageHeader eyebrow="Platform" title="All Businesses" subtitle="Onboard a business without code changes. Then create its agent under Agents." />
       <ErrorNote error={err || error} />
       <div className="card mb-6 grid gap-3 md:grid-cols-2">
         <div><label className="label">Business name</label><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') })} /></div>

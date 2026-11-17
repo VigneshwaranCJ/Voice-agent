@@ -106,9 +106,10 @@ export default function VoiceConsole() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="animate-rise mb-10 text-center">
-        <p className="text-[15px] font-medium text-brand-500">Voice Console</p>
-        <h1 className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 md:text-6xl">Talk to {look.name}.</h1>
+      <div className="animate-rise relative mb-10 text-center">
+        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -z-10 h-72 w-[42rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-100 via-violet-100 to-pink-100 opacity-60 blur-3xl" />
+        <p className="eyebrow">Voice Console</p>
+        <h1 className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 md:text-6xl">Talk to <span className="text-gradient">{look.name}</span>.</h1>
         <p className="mx-auto mt-4 max-w-xl text-[19px] leading-relaxed text-slate-500">
           Tap the character to start a call in English or Tamil. Interrupt any time. Drag it anywhere. Right-click, long-press or press E to restyle it.
         </p>
@@ -145,8 +146,8 @@ export default function VoiceConsole() {
         )}
       </div>
 
-      <div className="card animate-rise p-0" style={{ animationDelay: '160ms' }}>
-        <div className="flex items-center justify-between px-6 py-4">
+      <div className="card animate-rise overflow-hidden p-0" style={{ animationDelay: '160ms' }}>
+        <div className="flex items-center justify-between bg-gradient-to-b from-slate-50/80 to-white px-6 py-4">
           <div className="flex items-center gap-2.5">
             <span className={`h-2.5 w-2.5 rounded-full ${dot} ${state === 'speaking' || state === 'thinking' ? 'animate-pulse' : ''}`} />
             <span className="text-sm font-medium text-slate-900">{state ? STATE_LABEL[state] : 'Not connected'}</span>

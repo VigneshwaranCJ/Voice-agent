@@ -26,15 +26,39 @@
   --ease-apple: cubic-bezier(0.28, 0.11, 0.32, 1);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 28px rgb(0 0 0 / 0.06);
   --shadow-float: 0 12px 40px rgb(0 0 0 / 0.14);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.04), 0 18px 48px rgb(0 0 0 / 0.10);
+
+  --color-violet-accent: #8e5cf7;
+  --color-pink-accent: #e94f9a;
 }
 
 html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-body { @apply bg-slate-50 text-slate-800; font-feature-settings: "cv11", "ss01"; letter-spacing: -0.01em; }
+body {
+  @apply bg-slate-50 text-slate-800; font-feature-settings: "cv11", "ss01"; letter-spacing: -0.01em;
+  /* soft ambient light behind every page */
+  background-image:
+    radial-gradient(60rem 30rem at 85% -10%, rgb(0 113 227 / 0.07), transparent 70%),
+    radial-gradient(50rem 28rem at -10% 10%, rgb(142 92 247 / 0.06), transparent 70%);
+  background-attachment: fixed;
+}
 h1, h2, h3 { letter-spacing: -0.025em; }
 ::selection { background: rgb(0 113 227 / 0.18); }
 
 /* Surfaces */
-.card { @apply rounded-3xl bg-white p-6; box-shadow: var(--shadow-card); }
+.card {
+  @apply relative rounded-3xl bg-white p-6;
+  box-shadow: var(--shadow-card), inset 0 0 0 1px rgb(0 0 0 / 0.04);
+}
+.card-hover { transition: transform 0.5s var(--ease-apple), box-shadow 0.5s var(--ease-apple); }
+.card-hover:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift), inset 0 0 0 1px rgb(0 0 0 / 0.04); }
+/* gradient text for hero words */
+.text-gradient {
+  background: linear-gradient(100deg, var(--color-brand-500) 0%, var(--color-violet-accent) 55%, var(--color-pink-accent) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.eyebrow { @apply text-[13px] font-semibold uppercase tracking-[0.12em] text-brand-500; }
+/* icon tile used by stats and headers */
+.icon-tile { @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white; box-shadow: 0 6px 16px -6px currentColor; }
 .glass { @apply bg-white/72 backdrop-blur-2xl backdrop-saturate-150; }
 
 /* Controls */
@@ -55,22 +79,45 @@ h1, h2, h3 { letter-spacing: -0.025em; }
 }
 select.input { @apply appearance-none pr-9; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2386868b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 0.9rem center; }
 .label { @apply mb-1.5 block text-[13px] font-medium text-slate-600; }
+/* native checkboxes & radios in the brand colour, a touch larger */
+input[type=checkbox], input[type=radio] { accent-color: var(--color-brand-500); width: 1rem; height: 1rem; vertical-align: -0.15em; }
+/* pill tabs */
+.seg { @apply inline-flex rounded-full bg-slate-200/70 p-1; }
+.seg > button, .seg > a { @apply rounded-full px-4 py-1.5 text-sm text-slate-600 transition-all duration-300 hover:text-slate-900; }
+.seg > [aria-pressed=true], .seg > [aria-checked=true], .seg > [aria-selected=true] { @apply bg-white font-medium text-slate-900 shadow-sm; }
+/* loading shimmer */
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+.skeleton { @apply rounded-xl; background: linear-gradient(90deg, #efeff2 25%, #f7f7f9 50%, #efeff2 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 
 /* Tables */
 .table { @apply w-full text-left text-sm; }
-.table th { @apply border-b border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-500; }
+.table th { @apply border-b border-slate-200 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400; }
 .table td { @apply border-b border-slate-100 px-3 py-3 align-top; }
 .table tbody tr { @apply transition-colors hover:bg-slate-50; }
 
 /* Page entrance */
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .animate-rise { animation: rise 0.7s var(--ease-apple) both; }
+/* opacity only: never transform a wrapper that holds position:fixed children */
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade { animation: fade 0.45s var(--ease-apple) both; }
 
 /* Custom pointer: hide the system arrow only while our pointer is active (fine pointers, motion allowed).
    Text fields keep the native I-beam so typing and selecting stay precise. */
 html.custom-cursor, html.custom-cursor * { cursor: none !important; }
 html.custom-cursor :is(input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]), textarea, [contenteditable=true]) { cursor: text !important; }
 
+/* children rise one after another */
+.stagger > * { animation: rise 0.7s var(--ease-apple) both; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+.stagger > *:nth-child(6) { animation-delay: 300ms; }
+.stagger > *:nth-child(n+7) { animation-delay: 360ms; }
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-rise { animation: none; }
+  .animate-rise, .animate-fade, .stagger > * { animation: none; }
+  .card-hover:hover { transform: none; }
+  .skeleton { animation: none; }
 }

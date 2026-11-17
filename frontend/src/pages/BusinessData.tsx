@@ -25,7 +25,7 @@ export default function BusinessData() {
   const appts = useApi<Row[]>('/appointments')
   return (
     <div className="space-y-6">
-      <PageHeader title="Business Data" subtitle="Live records the agent reads and writes through its tools." />
+      <PageHeader eyebrow="Records" title="Business Data" subtitle="Live records the agent reads and writes through its tools." />
       {industry === 'real_estate' && (
         <div className="card"><div className="mb-3 text-sm font-semibold">Properties</div>
           <Table rows={props.data} cols={[['name', 'Name'], ['locality', 'Locality'], ['city', 'City'], ['price', 'Price', (r) => `${inr(r.price_min)} – ${inr(r.price_max)}`],

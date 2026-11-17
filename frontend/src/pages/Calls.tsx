@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { Badge, Empty, ErrorNote, PageHeader, fmtDate, statusTone } from '../components/ui'
+import { Badge, Empty, ErrorNote, Icons, PageHeader, fmtDate, statusTone } from '../components/ui'
 import { useApi } from '../hooks/useApi'
 import { LANGUAGES, type Conversation, type Message } from '../types'
 
@@ -8,36 +8,45 @@ export function Calls() {
   const { data: escalations } = useApi<{ id: string; conversation_id: string; reason: string; priority: string; summary: string; status: string; at: string }[]>('/escalations?status=open')
   return (
     <div>
-      <PageHeader title="Calls & Transcripts" />
+      <PageHeader eyebrow="Activity" title="Calls & Transcripts" subtitle="Every conversation, with what the agent did and why." />
       <ErrorNote error={error} />
       {!!escalations?.length && (
-        <div className="card mb-6">
-          <div className="mb-2 text-sm font-semibold text-rose-700">Open escalations</div>
-          {escalations.map((e) => (
-            <Link key={e.id} to={`/calls/${e.conversation_id}`} className="block border-b border-slate-100 py-2 text-sm last:border-0 hover:bg-slate-50">
-              <Badge tone={e.priority === 'critical' ? 'red' : 'amber'}>{e.priority}</Badge> <span className="font-medium">{e.reason.replace('_', ' ')}</span>
-              <span className="ml-2 text-slate-500">{e.summary.slice(0, 120)}</span>
-              <span className="float-right text-xs text-slate-400">{fmtDate(e.at)}</span>
-            </Link>
-          ))}
+        <div className="card mb-6 overflow-hidden bg-gradient-to-br from-rose-50/70 to-white p-0">
+          <div className="flex items-center gap-3 px-6 pb-2 pt-5">
+            <span className="icon-tile h-8 w-8 rounded-xl bg-gradient-to-br from-[#fb7185] to-[#e11d48] text-[#e11d48]"><span className="text-white">{Icons.alert}</span></span>
+            <div>
+              <div className="text-[15px] font-semibold text-slate-900">Open escalations</div>
+              <div className="text-xs text-slate-500">{escalations.length} waiting for a human</div>
+            </div>
+          </div>
+          <div className="px-3 pb-3">
+            {escalations.map((e) => (
+              <Link key={e.id} to={`/calls/${e.conversation_id}`} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition hover:bg-white">
+                <Badge tone={e.priority === 'critical' ? 'red' : 'amber'}>{e.priority}</Badge>
+                <span className="font-medium capitalize text-slate-900">{e.reason.replace('_', ' ')}</span>
+                <span className="min-w-0 flex-1 truncate text-slate-500">{e.summary}</span>
+                <span className="whitespace-nowrap text-xs text-slate-400">{fmtDate(e.at)}</span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
-      <div className="card overflow-x-auto">
+      <div className="card overflow-x-auto px-3 py-2">
         {data?.length ? (
           <table className="table">
             <thead><tr><th>Started</th><th>Channel</th><th>Status</th><th>Languages</th><th>Intents</th><th>Summary</th></tr></thead>
             <tbody>{data.map((c) => (
               <tr key={c.id} className="hover:bg-slate-50">
-                <td className="whitespace-nowrap"><Link className="text-brand-600 hover:underline" to={`/calls/${c.id}`}>{fmtDate(c.created_at)}</Link></td>
-                <td>{c.channel.replace('_', ' ')}</td>
+                <td className="whitespace-nowrap"><Link className="font-medium text-slate-900 hover:text-brand-500" to={`/calls/${c.id}`}>{fmtDate(c.created_at)}</Link></td>
+                <td className="whitespace-nowrap capitalize text-slate-600">{c.channel.replace('_', ' ')}</td>
                 <td><Badge tone={statusTone(c.status)}>{c.status}</Badge></td>
                 <td>{c.languages_used.map((l) => LANGUAGES[l] ?? l).join(', ')}</td>
-                <td className="text-xs">{c.intents.join(', ')}</td>
+                <td><div className="flex flex-wrap gap-1">{c.intents.map((t) => <code key={t} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{t}</code>)}</div></td>
                 <td className="max-w-md text-xs text-slate-600">{c.summary ?? '—'}</td>
               </tr>
             ))}</tbody>
           </table>
-        ) : <Empty>No conversations yet.</Empty>}
+        ) : <div className="p-3"><Empty icon={Icons.chat}>No conversations yet. Start one from the Voice page.</Empty></div>}
       </div>
     </div>
   )
@@ -59,7 +68,7 @@ export function CallDetail() {
   const c = data.conversation
   return (
     <div>
-      <PageHeader title="Conversation" subtitle={`${fmtDate(c.created_at)} · ${c.channel.replace('_', ' ')}`}
+      <PageHeader eyebrow="Transcript" title="Conversation" subtitle={`${fmtDate(c.created_at)} · ${c.channel.replace('_', ' ')}`}
         actions={<Link to="/calls" className="btn-ghost">← All calls</Link>} />
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="card space-y-3">

@@ -31,7 +31,7 @@ export default function Knowledge() {
 
   return (
     <div>
-      <PageHeader title="Knowledge Base" subtitle="Documents, FAQs and policies the agent can search. Retrieval is scoped to this business only." />
+      <PageHeader eyebrow="Knowledge" title="Knowledge Base" subtitle="Documents, FAQs and policies the agent can search. Retrieval is scoped to this business only." />
       <ErrorNote error={err || error} />
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <div className="card">

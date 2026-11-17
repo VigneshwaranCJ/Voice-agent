@@ -10,14 +10,17 @@ export default function Agents() {
   useEffect(() => { if (agents?.length && !selected) setSelected(agents[0].id) }, [agents, selected])
   return (
     <div>
-      <PageHeader title="Agents" subtitle="Personality, instructions, voice, languages and tools per agent. Saving creates a new config version." />
+      <PageHeader eyebrow="Configure" title="Agents" subtitle="Personality, instructions, voice, languages and tools per agent. Saving creates a new config version." />
       <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
         <div className="space-y-2">
           {agents?.map((a) => (
             <button key={a.id} onClick={() => setSelected(a.id)}
-              className={`card w-full text-left ${selected === a.id ? 'ring-2 ring-brand-500' : ''}`}>
-              <div className="font-medium">{a.name}</div>
-              <div className="mt-1 flex gap-1"><Badge tone="blue">{a.industry.replace('_', ' ')}</Badge>{!a.is_active && <Badge tone="red">inactive</Badge>}</div>
+              className={`card card-hover w-full p-4 text-left ${selected === a.id ? 'ring-2 ring-brand-500' : ''}`}>
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-[#8e5cf7] text-sm font-semibold text-white">{a.name.slice(0, 1)}</span>
+                <div className="min-w-0 font-medium text-slate-900">{a.name}</div>
+              </div>
+              <div className="mt-2 flex gap-1 pl-12"><Badge tone="blue">{a.industry.replace('_', ' ')}</Badge>{!a.is_active && <Badge tone="red">inactive</Badge>}</div>
             </button>
           ))}
         </div>

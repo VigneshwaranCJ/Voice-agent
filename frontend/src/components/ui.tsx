@@ -1,37 +1,57 @@
 import type { ReactNode } from 'react'
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions, eyebrow }: { title: ReactNode; subtitle?: string; actions?: ReactNode; eyebrow?: string }) {
   return (
-    <div className="animate-rise mb-8 flex flex-wrap items-end justify-between gap-4">
+    <div className="animate-rise mb-10 flex flex-wrap items-end justify-between gap-4">
       <div>
+        {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
         <h1 className="text-4xl font-semibold tracking-tight text-slate-900 md:text-5xl">{title}</h1>
-        {subtitle && <p className="mt-2 max-w-2xl text-[17px] leading-relaxed text-slate-500">{subtitle}</p>}
+        {subtitle && <p className="mt-3 max-w-2xl text-[17px] leading-relaxed text-slate-500">{subtitle}</p>}
       </div>
       {actions}
     </div>
   )
 }
 
-export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+const statTones = {
+  blue: 'from-[#2f8cff] to-brand-500 text-brand-500',
+  violet: 'from-[#a77bff] to-[#7c4dff] text-[#7c4dff]',
+  green: 'from-[#34d399] to-[#10b981] text-[#10b981]',
+  amber: 'from-[#fbbf24] to-[#f59e0b] text-[#f59e0b]',
+  rose: 'from-[#fb7185] to-[#e11d48] text-[#e11d48]',
+  slate: 'from-[#8e8e93] to-[#636366] text-[#636366]',
+} as const
+
+export function Stat({ label, value, hint, icon, tone = 'blue' }: {
+  label: string; value: ReactNode; hint?: string; icon?: ReactNode; tone?: keyof typeof statTones
+}) {
   return (
-    <div className="card">
-      <div className="text-[13px] font-medium text-slate-500">{label}</div>
-      <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+    <div className="card card-hover">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-[13px] font-medium text-slate-500">{label}</div>
+        {icon && <div className={`icon-tile h-9 w-9 rounded-xl bg-gradient-to-br ${statTones[tone]}`}><span className="text-white">{icon}</span></div>}
+      </div>
+      <div className="mt-3 text-[2rem] font-semibold leading-none tracking-tight text-slate-900 tabular-nums">{value}</div>
+      {hint && <div className="mt-2 text-xs text-slate-400">{hint}</div>}
     </div>
   )
 }
 
 const tones: Record<string, string> = {
-  green: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  red: 'bg-rose-50 text-rose-700 ring-rose-200',
-  amber: 'bg-amber-50 text-amber-700 ring-amber-200',
-  blue: 'bg-brand-50 text-brand-700 ring-brand-100',
-  gray: 'bg-slate-100 text-slate-600 ring-slate-200',
+  green: 'bg-emerald-50 text-emerald-700 ring-emerald-200/70 [--dot:#10b981]',
+  red: 'bg-rose-50 text-rose-700 ring-rose-200/70 [--dot:#e11d48]',
+  amber: 'bg-amber-50 text-amber-800 ring-amber-200/70 [--dot:#f59e0b]',
+  blue: 'bg-brand-50 text-brand-700 ring-brand-100 [--dot:#0071e3]',
+  gray: 'bg-slate-100 text-slate-600 ring-slate-200 [--dot:#a1a1a6]',
 }
 
 export function Badge({ children, tone = 'gray' }: { children: ReactNode; tone?: keyof typeof tones }) {
-  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${tones[tone]}`}>{children}</span>
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${tones[tone]}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--dot)]" aria-hidden />
+      {children}
+    </span>
+  )
 }
 
 export function statusTone(s: string): keyof typeof tones {
@@ -40,11 +60,63 @@ export function statusTone(s: string): keyof typeof tones {
 
 export function ErrorNote({ error }: { error: string | null }) {
   if (!error) return null
-  return <div className="mb-6 rounded-2xl bg-rose-50 px-5 py-3.5 text-sm text-rose-700">{error}</div>
+  return (
+    <div role="alert" className="mb-6 flex items-start gap-3 rounded-2xl bg-rose-50 px-5 py-3.5 text-sm text-rose-700 ring-1 ring-inset ring-rose-200/60">
+      <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5M12 16h.01" /></svg>
+      <span>{error}</span>
+    </div>
+  )
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="rounded-2xl bg-slate-50 p-10 text-center text-sm text-slate-500">{children}</div>
+export function Empty({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-200 bg-white/60 p-12 text-center text-sm text-slate-500">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+        {icon ?? <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 7h16M4 12h16M4 17h10" /></svg>}
+      </div>
+      <div className="max-w-sm">{children}</div>
+    </div>
+  )
+}
+
+export function Skeleton({ className = 'h-24' }: { className?: string }) {
+  return <div className={`skeleton ${className}`} aria-hidden />
+}
+
+/** A titled card section. */
+export function Panel({ title, subtitle, actions, children, className = '' }: {
+  title?: ReactNode; subtitle?: string; actions?: ReactNode; children: ReactNode; className?: string
+}) {
+  return (
+    <section className={`card ${className}`}>
+      {(title || actions) && (
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            {title && <h2 className="text-[17px] font-semibold text-slate-900">{title}</h2>}
+            {subtitle && <p className="mt-0.5 text-[13px] text-slate-500">{subtitle}</p>}
+          </div>
+          {actions}
+        </div>
+      )}
+      {children}
+    </section>
+  )
+}
+
+/** Small line icons (24px grid, stroke = currentColor). */
+const I = ({ d, children }: { d?: string; children?: ReactNode }) => (
+  <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    {d ? <path d={d} /> : children}
+  </svg>
+)
+export const Icons = {
+  phone: <I d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />,
+  check: <I d="M20 6 9 17l-5-5" />,
+  clock: <I><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></I>,
+  target: <I><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></I>,
+  alert: <I d="M12 3 2 21h20L12 3zM12 10v4M12 17.5h.01" />,
+  star: <I d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z" />,
+  chat: <I d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z" />,
 }
 
 export function fmtDate(s: string | null | undefined) {
