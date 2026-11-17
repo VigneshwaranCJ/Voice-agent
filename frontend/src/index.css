@@ -1,19 +1,76 @@
 @import "tailwindcss";
 
+/* Apple-style design tokens. `slate` is remapped to Apple's neutral greys and `brand` to Apple blue, so
+   every page picks up the new look through its existing utility classes. */
 @theme {
-  --color-brand-50: #eef6ff;
-  --color-brand-100: #d9eaff;
-  --color-brand-500: #2f6fed;
-  --color-brand-600: #2358c9;
-  --color-brand-700: #1d46a0;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+
+  --color-brand-50: #eaf3fe;
+  --color-brand-100: #d3e6fd;
+  --color-brand-300: #8cc0f8;
+  --color-brand-500: #0071e3;
+  --color-brand-600: #0066cc;
+  --color-brand-700: #0055ad;
+
+  --color-slate-50: #f5f5f7;
+  --color-slate-100: #efeff2;
+  --color-slate-200: #e5e5ea;
+  --color-slate-300: #d2d2d7;
+  --color-slate-400: #a1a1a6;
+  --color-slate-500: #86868b;
+  --color-slate-600: #6e6e73;
+  --color-slate-700: #424245;
+  --color-slate-800: #1d1d1f;
+  --color-slate-900: #1d1d1f;
+
+  --ease-apple: cubic-bezier(0.28, 0.11, 0.32, 1);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 28px rgb(0 0 0 / 0.06);
+  --shadow-float: 0 12px 40px rgb(0 0 0 / 0.14);
 }
 
-body { @apply bg-slate-50 text-slate-800 antialiased; }
-.card { @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm; }
-.btn { @apply inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50; }
-.btn-ghost { @apply inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50; }
-.input { @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100; }
-.label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500; }
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { @apply bg-slate-50 text-slate-800; font-feature-settings: "cv11", "ss01"; letter-spacing: -0.01em; }
+h1, h2, h3 { letter-spacing: -0.025em; }
+::selection { background: rgb(0 113 227 / 0.18); }
+
+/* Surfaces */
+.card { @apply rounded-3xl bg-white p-6; box-shadow: var(--shadow-card); }
+.glass { @apply bg-white/72 backdrop-blur-2xl backdrop-saturate-150; }
+
+/* Controls */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-brand-500 px-5 py-2 text-sm font-medium text-white
+    transition duration-300 hover:bg-brand-600 active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100;
+  transition-timing-function: var(--ease-apple);
+}
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-slate-200/70 px-4 py-2 text-sm font-medium text-slate-800
+    transition duration-300 hover:bg-slate-300/70 active:scale-[0.97] disabled:opacity-40;
+  transition-timing-function: var(--ease-apple);
+}
+.btn-link { @apply inline-flex items-center gap-1 text-sm font-medium text-brand-500 hover:underline; }
+.input {
+  @apply w-full rounded-xl border border-transparent bg-slate-100 px-3.5 py-2.5 text-sm text-slate-800 transition
+    placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-brand-500/15;
+}
+select.input { @apply appearance-none pr-9; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2386868b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 0.9rem center; }
+.label { @apply mb-1.5 block text-[13px] font-medium text-slate-600; }
+
+/* Tables */
 .table { @apply w-full text-left text-sm; }
-.table th { @apply border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase text-slate-500; }
-.table td { @apply border-b border-slate-100 px-3 py-2 align-top; }
+.table th { @apply border-b border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-500; }
+.table td { @apply border-b border-slate-100 px-3 py-3 align-top; }
+.table tbody tr { @apply transition-colors hover:bg-slate-50; }
+
+/* Page entrance */
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.animate-rise { animation: rise 0.7s var(--ease-apple) both; }
+
+/* Custom pointer: hide the system arrow only while our pointer is active (fine pointers, motion allowed).
+   Text fields keep the native I-beam so typing and selecting stay precise. */
+html.custom-cursor, html.custom-cursor * { cursor: none !important; }
+html.custom-cursor :is(input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]), textarea, [contenteditable=true]) { cursor: text !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise { animation: none; }
+}

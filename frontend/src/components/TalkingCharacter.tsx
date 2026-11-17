@@ -12,7 +12,8 @@
  * at 60 fps never re-renders React.
  */
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
+import { createRef, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { AgentState } from '../services/voiceClient'
 import {
   DEFAULT_MANGA, LIPSYNC_MOUTHS, MOUTH, MangaEditor, MangaFaceAvatar, mouthUrl, preloadMouths, type MangaLook,
@@ -83,7 +84,9 @@ export default function TalkingCharacter(props: Props) {
     y: Math.max(8, Math.min(window.innerHeight - size * 1.25 - 8, p.y)),
   }), [size])
   const [pos, setPos] = useState(() => loadPos(posKey) ?? { x: window.innerWidth - size - 40, y: window.innerHeight - size * 1.3 - 40 })
-  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
+  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean; long: boolean } | null>(null)
+  const longTimer = useRef<number | undefined>(undefined)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => { setPos((p) => clamp(p)) }, [clamp])
   useEffect(() => {
@@ -96,19 +99,26 @@ export default function TalkingCharacter(props: Props) {
   const onPointerDown = (e: RPointerEvent) => {
     if (e.button !== 0) return
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, sx: e.clientX, sy: e.clientY, moved: false }
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, sx: e.clientX, sy: e.clientY, moved: false, long: false }
+    // Long-press (touch or mouse) opens the editor.
+    window.clearTimeout(longTimer.current)
+    longTimer.current = window.setTimeout(() => {
+      if (drag.current && !drag.current.moved) { drag.current.long = true; setEditing(true) }
+    }, 550)
   }
   const onPointerMove = (e: RPointerEvent) => {
     const d = drag.current
     if (!d) return
     if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return
     d.moved = true
+    window.clearTimeout(longTimer.current)
     setPos(clamp({ x: e.clientX - d.dx, y: e.clientY - d.dy }))
   }
   const onPointerUp = () => {
     const d = drag.current
     drag.current = null
-    if (!d) return
+    window.clearTimeout(longTimer.current)
+    if (!d || d.long) return
     if (d.moved) savePos(pos)
     else if (!disabled) onActivate()
   }
@@ -121,6 +131,8 @@ export default function TalkingCharacter(props: Props) {
       setPos(p); savePos(p)
     } else if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
       e.preventDefault(); onActivate()
+    } else if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault(); setEditing(true)
     }
   }
 
@@ -135,6 +147,15 @@ export default function TalkingCharacter(props: Props) {
     head: useRef<HTMLDivElement>(null), body: useRef<HTMLDivElement>(null), eyes: useRef<HTMLDivElement>(null),
     brows: useRef<HTMLDivElement>(null), mouth: useRef<HTMLImageElement>(null),
   }
+  const previewManga = useMemo(() => ({
+    head: createRef<HTMLDivElement>(), body: createRef<HTMLDivElement>(), eyes: createRef<HTMLDivElement>(),
+    brows: createRef<HTMLDivElement>(), mouth: createRef<HTMLImageElement>(),
+  }), [])
+  const previewSvg = useMemo(() => ({
+    body: createRef<SVGGElement>(), head: createRef<SVGGElement>(), eyes: createRef<SVGGElement>(), pupils: createRef<SVGGElement>(),
+    mouth: createRef<SVGEllipseElement>(), brows: createRef<SVGGElement>(), armL: createRef<SVGGElement>(), armR: createRef<SVGGElement>(),
+    ring: createRef<SVGCircleElement>(), dots: createRef<SVGGElement>(), shadow: createRef<SVGEllipseElement>(),
+  }), [])
   const live_ = useRef({ state, reaction, muted, look })
   live_.current = { state, reaction, muted, look }
   useEffect(() => { if (look.style === 'manga') preloadMouths(look.manga.skin) }, [look.style, look.manga.skin])
@@ -248,7 +269,6 @@ export default function TalkingCharacter(props: Props) {
   }, [])
 
   // ---- editor ----------------------------------------------------------------------------------------
-  const [editing, setEditing] = useState(false)
   useEffect(() => {
     if (!editing) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(false) }
@@ -266,10 +286,15 @@ export default function TalkingCharacter(props: Props) {
               : caption || '…'
 
   const bubbleLeft = pos.x + size / 2 > window.innerWidth / 2
+  const cursorLabel = disabled ? 'Pick an agent' : !live ? 'Tap to talk' : muted ? 'Tap to unmute' : 'Tap to mute'
+  const resetPos = () => {
+    const p = clamp({ x: window.innerWidth - size - 40, y: window.innerHeight - size * 1.3 - 40 })
+    setPos(p); savePos(p)
+  }
   return (
     <div className="pointer-events-none fixed z-40 select-none" style={{ left: pos.x, top: pos.y, width: size }}>
       {/* speech bubble */}
-      <div className={`pointer-events-auto absolute bottom-full mb-1 w-64 rounded-2xl bg-white px-3 py-2 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200 ${bubbleLeft ? 'right-1/3' : 'left-1/3'}`}
+      <div className={`glass pointer-events-auto absolute bottom-full mb-2 w-64 rounded-2xl px-4 py-2.5 text-[13px] leading-snug text-slate-800 shadow-[var(--shadow-float)] ring-1 ring-black/5 ${bubbleLeft ? 'right-1/3' : 'left-1/3'}`}
         aria-live="polite">
         <span className="line-clamp-3">{status}</span>
       </div>
@@ -277,10 +302,13 @@ export default function TalkingCharacter(props: Props) {
       <div
         role="button"
         tabIndex={0}
-        aria-label={live ? `${look.name}: ${status}. Press Enter to ${muted ? 'unmute' : 'mute'}. Arrow keys move.` : `Start a voice call with ${look.name}. Arrow keys move.`}
+        data-cursor={cursorLabel}
+        aria-label={`${live ? `${look.name}: ${status}. Enter to ${muted ? 'unmute' : 'mute'}` : `Start a voice call with ${look.name}. Enter to start`}. E to edit. Arrow keys move.`}
         aria-disabled={disabled}
-        className={`pointer-events-auto touch-none rounded-full outline-none focus-visible:ring-4 focus-visible:ring-brand-300 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-grab active:cursor-grabbing'}`}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null }}
+        className={`group pointer-events-auto touch-none rounded-[2rem] outline-none transition-transform duration-500 ease-[var(--ease-apple)] hover:-translate-y-1 hover:scale-[1.03] focus-visible:ring-4 focus-visible:ring-brand-500/30 ${disabled ? 'opacity-60' : ''}`}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+        onPointerCancel={() => { drag.current = null; window.clearTimeout(longTimer.current) }}
+        onContextMenu={(e) => { e.preventDefault(); setEditing(true) }}
         onKeyDown={onKeyDown}
       >
         {look.style === 'manga' ? (
@@ -295,67 +323,101 @@ export default function TalkingCharacter(props: Props) {
         )}
       </div>
 
-      {/* controls */}
-      <div className="pointer-events-auto mt-1 flex justify-center gap-1">
-        <button className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow ring-1 ring-slate-200 hover:bg-slate-50"
-          onClick={() => setEditing((v) => !v)} aria-expanded={editing}>Edit</button>
-        {live && onEnd && (
-          <button className="rounded-full bg-rose-600 px-2.5 py-1 text-xs font-medium text-white shadow hover:bg-rose-700" onClick={onEnd}>End call</button>
-        )}
+      {/* glass toolbar */}
+      <div className="pointer-events-auto mt-2 flex justify-center">
+        <div className="glass flex items-center gap-1 rounded-full p-1 shadow-[var(--shadow-float)] ring-1 ring-black/5">
+          <ToolButton label={!live ? 'Talk' : muted ? 'Unmute' : 'Mute'} onClick={() => !disabled && onActivate()} disabled={disabled}
+            tone={live && muted ? 'danger' : 'primary'}>
+            {live && muted ? <IconMicOff /> : <IconMic />}
+          </ToolButton>
+          <ToolButton label="Edit character" onClick={() => setEditing(true)}><IconPencil /></ToolButton>
+          {live && onEnd && <ToolButton label="End call" onClick={onEnd} tone="danger"><IconPhoneDown /></ToolButton>}
+        </div>
       </div>
 
-      {editing && (
-        <div className={`pointer-events-auto absolute max-h-[80vh] w-72 space-y-3 overflow-y-auto rounded-xl bg-white p-4 text-sm shadow-xl ring-1 ring-slate-200 ${bubbleLeft ? 'right-0' : 'left-0'} ${pos.y > 460 ? 'bottom-full mb-16' : 'top-full mt-2'}`}>
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-slate-800">Customise character</span>
-            <button className="text-slate-400 hover:text-slate-600" onClick={() => setEditing(false)} aria-label="Close editor">✕</button>
-          </div>
-          <label className="block">
-            <span className="label">Name</span>
-            <input className="input" value={look.name} maxLength={24} onChange={(e) => set('name', e.target.value)} />
-          </label>
-          <div>
-            <span className="label">Style</span>
-            <Segmented options={['manga', 'classic'] as CharacterStyle[]} value={look.style} onChange={(v) => set('style', v)} />
-          </div>
-          {look.style === 'manga' ? (
-            <>
-              <MangaEditor look={look.manga} onChange={(v) => set('manga', v)} />
-              <p className="text-[11px] leading-snug text-slate-400">
-                Art: <a className="underline" href="https://github.com/miladnia/MangaFace" target="_blank" rel="noreferrer">MangaFace</a> by Milad Abdollahnia (MIT)
-              </p>
-            </>
-          ) : (
-            <>
-              <Swatches label="Skin" options={SKINS} value={look.skin} onChange={(v) => set('skin', v)} />
-              <div>
-                <span className="label">Hair</span>
-                <Segmented options={['short', 'long', 'bun', 'curly', 'none'] as HairStyle[]} value={look.hairStyle} onChange={(v) => set('hairStyle', v)} />
+      {editing && createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Edit character">
+          <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={() => setEditing(false)} />
+          <div className="animate-rise relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_30px_80px_rgb(0_0_0/0.25)]" style={{ animationDuration: '0.45s' }}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <button className="text-sm text-slate-500 hover:text-slate-800" onClick={() => onLookChange({ ...DEFAULT_LOOK, name: look.name, size: look.size })}>Reset</button>
+              <h2 className="text-[17px] font-semibold text-slate-900">Edit character</h2>
+              <button className="text-sm font-semibold text-brand-500 hover:text-brand-600" onClick={() => setEditing(false)}>Done</button>
+            </div>
+            <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+              {/* live preview */}
+              <div className="flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-slate-50 to-slate-100 p-8">
+                <div className="rounded-full bg-white/70 p-3 shadow-[var(--shadow-card)]">
+                  {look.style === 'manga'
+                    ? <MangaFaceAvatar look={look.manga} refs={previewManga} width={200} />
+                    : <div style={{ width: 200 }}><CharacterSvg look={look} r={previewSvg} muted={false} live={false} /></div>}
+                </div>
+                <input aria-label="Character name" className="w-56 bg-transparent text-center text-2xl font-semibold tracking-tight text-slate-900 outline-none placeholder:text-slate-300"
+                  value={look.name} maxLength={24} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
+                <div className="inline-flex rounded-full bg-slate-200/70 p-1">
+                  {(['manga', 'classic'] as CharacterStyle[]).map((st) => (
+                    <button key={st} onClick={() => set('style', st)} aria-pressed={look.style === st}
+                      className={`rounded-full px-4 py-1 text-sm capitalize transition-all duration-300 ${look.style === st ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-600'}`}>{st}</button>
+                  ))}
+                </div>
               </div>
-              {look.hairStyle !== 'none' && <Swatches label="Hair colour" options={HAIR_COLORS} value={look.hairColor} onChange={(v) => set('hairColor', v)} />}
-              <Swatches label="Outfit" options={OUTFITS} value={look.outfit} onChange={(v) => set('outfit', v)} />
-              <div>
-                <span className="label">Accessory</span>
-                <Segmented options={['headset', 'glasses', 'none'] as Accessory[]} value={look.accessory} onChange={(v) => set('accessory', v)} />
+              {/* controls */}
+              <div className="min-h-0 space-y-4 overflow-y-auto p-6 text-sm">
+                {look.style === 'manga' ? (
+                  <>
+                    <MangaEditor look={look.manga} onChange={(v) => set('manga', v)} />
+                    <p className="text-[11px] leading-snug text-slate-400">
+                      Art: <a className="underline" href="https://github.com/miladnia/MangaFace" target="_blank" rel="noreferrer">MangaFace</a> by Milad Abdollahnia (MIT)
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Swatches label="Skin" options={SKINS} value={look.skin} onChange={(v) => set('skin', v)} />
+                    <div>
+                      <span className="label">Hair</span>
+                      <Segmented options={['short', 'long', 'bun', 'curly', 'none'] as HairStyle[]} value={look.hairStyle} onChange={(v) => set('hairStyle', v)} />
+                    </div>
+                    {look.hairStyle !== 'none' && <Swatches label="Hair colour" options={HAIR_COLORS} value={look.hairColor} onChange={(v) => set('hairColor', v)} />}
+                    <Swatches label="Outfit" options={OUTFITS} value={look.outfit} onChange={(v) => set('outfit', v)} />
+                    <div>
+                      <span className="label">Accessory</span>
+                      <Segmented options={['headset', 'glasses', 'none'] as Accessory[]} value={look.accessory} onChange={(v) => set('accessory', v)} />
+                    </div>
+                  </>
+                )}
+                <div>
+                  <span className="label">Size on screen</span>
+                  <Segmented options={['sm', 'md', 'lg'] as CharacterSize[]} value={look.size} onChange={(v) => set('size', v)} />
+                </div>
+                <button className="btn-link" onClick={resetPos}>Move back to the corner</button>
+                <p className="text-xs text-slate-400">Tip: right-click or long-press the character to open this editor.</p>
               </div>
-            </>
-          )}
-          <div>
-            <span className="label">Size</span>
-            <Segmented options={['sm', 'md', 'lg'] as CharacterSize[]} value={look.size} onChange={(v) => set('size', v)} />
+            </div>
           </div>
-          <div className="flex justify-between pt-1">
-            <button className="text-xs text-slate-500 hover:text-slate-700" onClick={() => onLookChange({ ...DEFAULT_LOOK, name: look.name })}>Reset look</button>
-            <button className="text-xs text-slate-500 hover:text-slate-700" onClick={() => {
-              const p = clamp({ x: window.innerWidth - size - 40, y: window.innerHeight - size * 1.3 - 40 })
-              setPos(p); savePos(p)
-            }}>Reset position</button>
-          </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
 }
+
+function ToolButton({ label, onClick, children, disabled, tone }: {
+  label: string; onClick: () => void; children: React.ReactNode; disabled?: boolean; tone?: 'primary' | 'danger'
+}) {
+  const color = tone === 'primary' ? 'bg-brand-500 text-white hover:bg-brand-600' : tone === 'danger' ? 'bg-rose-500 text-white hover:bg-rose-600' : 'text-slate-700 hover:bg-slate-900/[0.06]'
+  return (
+    <button type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled}
+      className={`flex h-9 w-9 items-center justify-center rounded-full transition duration-300 active:scale-90 disabled:opacity-40 ${color}`}>
+      {children}
+    </button>
+  )
+}
+
+const svgIcon = 'h-[18px] w-[18px]'
+const IconMic = () => (<svg viewBox="0 0 24 24" className={svgIcon} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>)
+const IconMicOff = () => (<svg viewBox="0 0 24 24" className={svgIcon} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 9.3V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 5 2.2M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.4 2.3M12 18v3M3 3l18 18" /></svg>)
+const IconPencil = () => (<svg viewBox="0 0 24 24" className={svgIcon} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M16.9 3.6a2.1 2.1 0 0 1 3 3L8 18.5 4 20l1.5-4z" /></svg>)
+const IconPhoneDown = () => (<svg viewBox="0 0 24 24" className={svgIcon} fill="currentColor" aria-hidden><path d="M12 9c-3.2 0-6.2.9-8.6 2.6-.6.4-.8 1.2-.5 1.9l1 2c.3.6 1 .9 1.7.7l2.6-.9c.6-.2 1-.8 1-1.4v-1.6a12 12 0 0 1 5.6 0v1.6c0 .6.4 1.2 1 1.4l2.6.9c.7.2 1.4-.1 1.7-.7l1-2c.3-.7.1-1.5-.5-1.9C18.2 9.9 15.2 9 12 9z" /></svg>)
 
 function Swatches({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
   return (

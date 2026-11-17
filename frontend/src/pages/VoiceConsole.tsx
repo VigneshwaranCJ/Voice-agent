@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import TalkingCharacter, { DEFAULT_LOOK, type CharacterLook, type Reaction } from '../components/TalkingCharacter'
-import { Badge, ErrorNote, PageHeader } from '../components/ui'
+import { ErrorNote } from '../components/ui'
 import { useApi } from '../hooks/useApi'
 import { session, voiceSocketUrl, voiceTicket } from '../services/api'
 import { VoiceClient, type AgentState } from '../services/voiceClient'
@@ -102,63 +102,86 @@ export default function VoiceConsole() {
     setText('')
   }
 
+  const dot = state === 'speaking' ? 'bg-brand-500' : state === 'listening' ? 'bg-emerald-500' : state === 'thinking' ? 'bg-amber-400' : state === 'connecting' ? 'bg-slate-400' : 'bg-slate-300'
+
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Voice Console" subtitle="Talk to a business's agent in the browser (Sarvam Saaras v4 → agent → Bulbul v4)." />
+      <div className="animate-rise mb-10 text-center">
+        <p className="text-[15px] font-medium text-brand-500">Voice Console</p>
+        <h1 className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 md:text-6xl">Talk to {look.name}.</h1>
+        <p className="mx-auto mt-4 max-w-xl text-[19px] leading-relaxed text-slate-500">
+          Tap the character to start a call in English or Tamil. Interrupt any time. Drag it anywhere. Right-click, long-press or press E to restyle it.
+        </p>
+      </div>
       <ErrorNote error={error} />
       {info && info.sarvam_configured === false && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="mb-6 rounded-2xl bg-amber-50 px-5 py-3.5 text-sm text-amber-800">
           The server has no <code>SARVAM_API_KEY</code>. Add it to <code>.env</code> and restart the backend to enable speech and AI replies.
         </div>
       )}
-      <div className="card mb-4 flex flex-wrap items-end gap-4">
-        <div className="min-w-60 flex-1">
-          <label className="label">Agent</label>
-          <select className="input" value={agentId} disabled={!!live} onChange={(e) => setAgentId(e.target.value)}>
+
+      <div className="animate-rise mb-6 flex flex-wrap items-center justify-center gap-3" style={{ animationDelay: '80ms' }}>
+        {agents && agents.length <= 4 ? (
+          <div role="radiogroup" aria-label="Agent" className="inline-flex rounded-full bg-slate-200/70 p-1">
+            {agents.map((a) => (
+              <button key={a.id} role="radio" aria-checked={a.id === agentId} disabled={!!live} onClick={() => setAgentId(a.id)}
+                className={`rounded-full px-4 py-1.5 text-sm transition-all duration-300 ${a.id === agentId ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'} disabled:cursor-not-allowed`}>
+                {a.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <select className="input w-72" aria-label="Agent" value={agentId} disabled={!!live} onChange={(e) => setAgentId(e.target.value)}>
             {agents?.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.industry.replace('_', ' ')}</option>)}
           </select>
-        </div>
+        )}
         {!live ? (
-          <>
-            <span className="text-sm text-slate-500">Tap the character to start talking. Drag it anywhere.</span>
-            <button className="btn-ghost" onClick={() => start(false)} disabled={!agentId}>Text only</button>
-          </>
+          <button className="btn-ghost" onClick={() => start(false)} disabled={!agentId}>Text only</button>
         ) : (
           <>
             <button className="btn-ghost" onClick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
-            <button className="btn bg-rose-600 hover:bg-rose-700" onClick={stop}>End call</button>
+            <button className="btn bg-rose-500 hover:bg-rose-600" onClick={stop}>End call</button>
           </>
         )}
       </div>
 
-      <div className="card">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className={`h-3 w-3 rounded-full ${state === 'speaking' ? 'bg-brand-500 animate-pulse' : state === 'listening' ? 'bg-emerald-500' : state === 'thinking' ? 'bg-amber-400 animate-pulse' : 'bg-slate-300'}`} />
-            <span className="text-sm font-medium">{state ? STATE_LABEL[state] : 'Not connected'}</span>
-            {info?.agent && <span className="text-xs text-slate-400">with {info.agent.persona}</span>}
+      <div className="card animate-rise p-0" style={{ animationDelay: '160ms' }}>
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className={`h-2.5 w-2.5 rounded-full ${dot} ${state === 'speaking' || state === 'thinking' ? 'animate-pulse' : ''}`} />
+            <span className="text-sm font-medium text-slate-900">{state ? STATE_LABEL[state] : 'Not connected'}</span>
+            {info?.agent && <span className="text-sm text-slate-400">· {info.agent.persona}</span>}
           </div>
-          <div className="h-2 w-40 overflow-hidden rounded bg-slate-100" title="Mic level">
-            <div className="h-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, level * 250)}%` }} />
+          <div className="flex h-4 items-end gap-0.5" title="Microphone level" aria-hidden>
+            {[0.6, 1, 0.75, 0.9, 0.5].map((f, i) => (
+              <span key={i} className="w-1 rounded-full bg-emerald-400 transition-all duration-100" style={{ height: `${Math.max(15, Math.min(100, level * 400 * f))}%` }} />
+            ))}
           </div>
         </div>
-        <div ref={scroller} className="h-[28rem] space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">
-          {lines.length === 0 && <div className="pt-32 text-center text-sm text-slate-400">Start a call and speak in English or Tamil. You can interrupt the agent at any time.</div>}
+        <div ref={scroller} className="h-[26rem] space-y-2 overflow-y-auto border-y border-slate-100 px-6 py-5">
+          {lines.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="text-[15px] font-medium text-slate-700">No conversation yet</div>
+              <div className="mt-1 text-sm text-slate-400">Your call transcript appears here as you talk.</div>
+            </div>
+          )}
           {lines.map((l, i) => l.role === 'system' ? (
-            <div key={i} className="text-center text-xs text-slate-400">{l.text}</div>
+            <div key={i} className="py-1 text-center text-xs text-slate-400">{l.text}</div>
           ) : (
             <div key={i} className={`flex ${l.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${l.role === 'user' ? 'bg-brand-600 text-white' : 'bg-white ring-1 ring-slate-200'} ${l.partial ? 'opacity-60' : ''}`}>
+              <div className={`max-w-[75%] rounded-[20px] px-4 py-2.5 text-[15px] leading-snug ${l.role === 'user' ? 'rounded-br-md bg-brand-500 text-white' : 'rounded-bl-md bg-slate-100 text-slate-900'} ${l.partial ? 'opacity-60' : ''}`}>
                 {l.text}
-                {l.language && <div className="mt-1"><Badge tone={l.role === 'user' ? 'gray' : 'blue'}>{LANGUAGES[l.language] ?? l.language}</Badge></div>}
+                {l.language && <div className={`mt-1 text-[11px] ${l.role === 'user' ? 'text-white/70' : 'text-slate-400'}`}>{LANGUAGES[l.language] ?? l.language}</div>}
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-3 flex gap-2">
-          <input className="input" placeholder={live ? 'Type a message (also interrupts the agent)…' : 'Start a call first'} disabled={!live}
+        <div className="flex gap-2 p-3">
+          <input className="input rounded-full" placeholder={live ? 'Message (also interrupts the agent)' : 'Start a call to send messages'} disabled={!live}
             value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendText()} />
-          <button className="btn" disabled={!live || !text.trim()} onClick={sendText}>Send</button>
+          <button className="btn" disabled={!live || !text.trim()} onClick={sendText} aria-label="Send">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+          </button>
         </div>
       </div>
 

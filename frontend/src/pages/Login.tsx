@@ -17,17 +17,29 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 to-white p-4">
-      <form onSubmit={submit} className="card w-full max-w-sm space-y-4">
-        <div>
-          <h1 className="text-xl font-semibold">VoiceCare Platform</h1>
-          <p className="text-sm text-slate-500">Sign in to manage your AI customer-care agents.</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white p-5">
+      {/* soft ambient gradient */}
+      <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 h-[36rem] w-[60rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-100 via-violet-100 to-sky-100 opacity-70 blur-3xl" />
+      <form onSubmit={submit} className="animate-rise relative w-full max-w-sm">
+        <div className="mb-10 text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[var(--shadow-float)]">
+            <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true">
+              <rect x="3" y="9" width="2.6" height="6" rx="1.3" fill="currentColor" />
+              <rect x="7.6" y="5" width="2.6" height="14" rx="1.3" fill="currentColor" />
+              <rect x="12.2" y="7.5" width="2.6" height="9" rx="1.3" fill="currentColor" />
+              <rect x="16.8" y="3.5" width="2.6" height="17" rx="1.3" fill="currentColor" />
+            </svg>
+          </div>
+          <h1 className="text-4xl font-semibold tracking-tight text-slate-900">Sign in to VoiceCare.</h1>
+          <p className="mt-3 text-[17px] text-slate-500">Your AI customer-care agents, in one place.</p>
         </div>
-        {error && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
-        <div><label className="label">Email</label><input className="input" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-        <div><label className="label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-        <button className="btn w-full justify-center" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <p className="text-xs text-slate-400">Development seed accounts are listed in <code>.env.example</code>.</p>
+        {error && <div className="mb-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+        <div className="space-y-3">
+          <input className="input py-3.5 text-[15px]" placeholder="Email" aria-label="Email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="input py-3.5 text-[15px]" type="password" placeholder="Password" aria-label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+        <button className="btn mt-6 w-full py-3 text-[15px]" disabled={busy || !email || !password}>{busy ? 'Signing in…' : 'Continue'}</button>
+        <p className="mt-6 text-center text-xs text-slate-400">Development accounts are listed in <code>.env.example</code>.</p>
       </form>
     </div>
   )

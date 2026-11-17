@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import CustomCursor from './components/CustomCursor'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import AppLayout from './layouts/AppLayout'
 import { BusinessProfile, Integrations, Tenants } from './pages/Admin'
@@ -13,13 +14,14 @@ import VoiceConsole from './pages/VoiceConsole'
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
-  if (loading) return <div className="p-8 text-sm text-slate-500">Loading…</div>
+  if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-400">Loading…</div>
   return user ? <>{children}</> : <Navigate to="/login" replace />
 }
 
 export default function App() {
   return (
     <AuthProvider>
+      <CustomCursor />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
