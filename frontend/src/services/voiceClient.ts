@@ -41,10 +41,14 @@ class UtterancePlayer {
   private onDone: () => void
   private useMse = typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg')
 
-  constructor(id: string, onDone: () => void) {
+  constructor(id: string, onDone: () => void, output?: { ctx: AudioContext; analyser: AnalyserNode }) {
     this.id = id
     this.onDone = onDone
     this.audio.onended = () => this.finish()
+    if (output) {
+      // Route playback through an analyser so the avatar can lip-sync to the agent's voice.
+      try { output.ctx.createMediaElementSource(this.audio).connect(output.analyser) } catch { /* plays directly */ }
+    }
     if (this.useMse) {
       this.ms = new MediaSource()
       this.audio.src = URL.createObjectURL(this.ms)
@@ -105,13 +109,35 @@ export class VoiceClient {
   private player: UtterancePlayer | null = null
   private muted = false
   private ev: VoiceEvents
+  private out: { ctx: AudioContext; analyser: AnalyserNode; buf: Float32Array<ArrayBuffer> } | null = null
+
+  /** Latest caller mic level (0..~0.4 RMS). Read every frame by the avatar; no React re-render needed. */
+  micLevel = 0
 
   constructor(events: VoiceEvents) {
     this.ev = events
   }
 
+  /** Current loudness of the agent's voice, 0..1 (smoothed by the analyser). */
+  agentLevel(): number {
+    if (!this.out) return 0
+    this.out.analyser.getFloatTimeDomainData(this.out.buf)
+    let sum = 0
+    for (let i = 0; i < this.out.buf.length; i++) sum += this.out.buf[i] * this.out.buf[i]
+    return Math.min(1, Math.sqrt(sum / this.out.buf.length) * 4)
+  }
+
   async connect(url: string, withMic = true) {
     this.ev.onState?.('connecting')
+    // Created inside the user's click, so autoplay policies allow it.
+    try {
+      const ctx = new AudioContext()
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 1024
+      analyser.smoothingTimeConstant = 0.5
+      analyser.connect(ctx.destination)
+      this.out = { ctx, analyser, buf: new Float32Array(analyser.fftSize) }
+    } catch { this.out = null }
     if (withMic) {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
@@ -121,6 +147,7 @@ export class VoiceClient {
       const src = this.ctx.createMediaStreamSource(this.stream)
       this.node = new AudioWorkletNode(this.ctx, 'pcm-capture')
       this.node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
+        this.micLevel = this.muted ? 0 : e.data.level
         this.ev.onLevel?.(e.data.level)
         if (!this.muted && this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: 'audio', data: bytesToB64(e.data.pcm) }))
@@ -136,12 +163,16 @@ export class VoiceClient {
 
   setMuted(m: boolean) { this.muted = m }
 
+  private send(msg: Record<string, unknown>) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg))
+  }
+
   sendText(text: string) {
-    this.ws?.send(JSON.stringify({ type: 'text', text }))
+    this.send({ type: 'text', text })
   }
 
   hangup() {
-    try { this.ws?.send(JSON.stringify({ type: 'stop' })) } catch { /* closed */ }
+    this.send({ type: 'stop' })
     this.ws?.close()
     this.cleanupAudio()
   }
@@ -152,7 +183,8 @@ export class VoiceClient {
     this.node?.disconnect()
     this.stream?.getTracks().forEach((t) => t.stop())
     this.ctx?.close().catch(() => {})
-    this.node = null; this.stream = null; this.ctx = null
+    this.out?.ctx.close().catch(() => {})
+    this.node = null; this.stream = null; this.ctx = null; this.out = null; this.micLevel = 0
   }
 
   private handle(msg: Record<string, any>) {
@@ -169,8 +201,8 @@ export class VoiceClient {
           this.player?.stop()
           const uid = msg.utterance_id as string
           this.player = new UtterancePlayer(uid, () => {
-            this.ws?.send(JSON.stringify({ type: 'playback_done', utterance_id: uid }))
-          })
+            this.send({ type: 'playback_done', utterance_id: uid })
+          }, this.out ?? undefined)
         }
         this.player.push(b64ToBytes(msg.data))
         break

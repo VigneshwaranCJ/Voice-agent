@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import TalkingCharacter, { DEFAULT_LOOK, type CharacterLook, type Reaction } from '../components/TalkingCharacter'
 import { Badge, ErrorNote, PageHeader } from '../components/ui'
 import { useApi } from '../hooks/useApi'
 import { session, voiceSocketUrl, voiceTicket } from '../services/api'
@@ -23,6 +24,29 @@ export default function VoiceConsole() {
   const [info, setInfo] = useState<Record<string, any> | null>(null)
   const client = useRef<VoiceClient | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  const [reaction, setReaction] = useState<Reaction>(null)
+  const reactionTimer = useRef<number | undefined>(undefined)
+  const react = (r: Reaction, ms: number) => {
+    window.clearTimeout(reactionTimer.current)
+    setReaction(r)
+    reactionTimer.current = window.setTimeout(() => setReaction(null), ms)
+  }
+
+  // Character look is saved per agent in this browser.
+  const agent = agents?.find((a) => a.id === agentId)
+  const lookKey = `character:${agentId}:look`
+  const [look, setLook] = useState<CharacterLook>(DEFAULT_LOOK)
+  useEffect(() => {
+    if (!agentId) return
+    let saved: Partial<CharacterLook> | null = null
+    try { saved = JSON.parse(localStorage.getItem(lookKey) || 'null') } catch { /* ignore */ }
+    setLook({ ...DEFAULT_LOOK, name: agent?.name ?? DEFAULT_LOOK.name, ...(saved ?? {}) })
+  }, [agentId, lookKey, agent?.name])
+  const changeLook = (l: CharacterLook) => {
+    setLook(l)
+    try { localStorage.setItem(lookKey, JSON.stringify(l)) } catch { /* private mode */ }
+  }
+  const levels = useCallback(() => ({ mic: client.current?.micLevel ?? 0, agent: client.current?.agentLevel() ?? 0 }), [])
 
   useEffect(() => { if (agents?.length && !agentId) setAgentId(agents[0].id) }, [agents, agentId])
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }) }, [lines])
@@ -38,17 +62,24 @@ export default function VoiceConsole() {
 
   const start = async (withMic: boolean) => {
     if (!agentId || !session.token) return
-    setLines([]); setError(null); setInfo(null)
+    setLines([]); setError(null); setInfo(null); setMuted(false)
     const c = new VoiceClient({
       onState: setState,
-      onReady: setInfo,
+      onReady: (i) => {
+        setInfo(i)
+        // Use the agent's persona as the character's name unless the user customised it.
+        const persona = (i.agent as { persona?: string } | undefined)?.persona
+        let saved = false
+        try { saved = !!localStorage.getItem(lookKey) } catch { /* ignore */ }
+        if (persona && !saved) setLook((l) => ({ ...l, name: persona }))
+      },
       onLevel: (v) => setLevel(v),
       onError: (m) => setError(m),
       onTranscript: (t) => push({ role: t.role, text: t.text, language: t.language, partial: !t.final }),
       onEvent: (e) => {
-        if (e.type === 'handoff') push({ role: 'system', text: `Escalated to a human (${e.reason}, priority ${e.priority})` })
-        if (e.type === 'interrupt') push({ role: 'system', text: 'Caller interrupted — agent stopped speaking' })
-        if (e.type === 'ended') push({ role: 'system', text: `Call ended (${e.reason})` })
+        if (e.type === 'handoff') { push({ role: 'system', text: `Escalated to a human (${e.reason}, priority ${e.priority})` }); react('concerned', 3000) }
+        if (e.type === 'interrupt') { push({ role: 'system', text: 'Caller interrupted — agent stopped speaking' }); react('surprised', 800) }
+        if (e.type === 'ended') { push({ role: 'system', text: `Call ended (${e.reason})` }); react('goodbye', 2500) }
       },
     })
     client.current = c
@@ -60,8 +91,10 @@ export default function VoiceConsole() {
     }
   }
 
-  const stop = () => { client.current?.hangup(); client.current = null; setState('ended') }
+  const stop = () => { client.current?.hangup(); client.current = null; setState('ended'); react('goodbye', 2500) }
   const live = state && state !== 'ended'
+  const toggleMute = () => { setMuted(!muted); client.current?.setMuted(!muted) }
+  const lastAgentLine = [...lines].reverse().find((l) => l.role === 'agent')?.text
 
   const sendText = () => {
     if (!text.trim() || !client.current) return
@@ -87,12 +120,12 @@ export default function VoiceConsole() {
         </div>
         {!live ? (
           <>
-            <button className="btn" onClick={() => start(true)} disabled={!agentId}>Start voice call</button>
+            <span className="text-sm text-slate-500">Tap the character to start talking. Drag it anywhere.</span>
             <button className="btn-ghost" onClick={() => start(false)} disabled={!agentId}>Text only</button>
           </>
         ) : (
           <>
-            <button className="btn-ghost" onClick={() => { setMuted(!muted); client.current?.setMuted(!muted) }}>{muted ? 'Unmute' : 'Mute'}</button>
+            <button className="btn-ghost" onClick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>
             <button className="btn bg-rose-600 hover:bg-rose-700" onClick={stop}>End call</button>
           </>
         )}
@@ -128,6 +161,20 @@ export default function VoiceConsole() {
           <button className="btn" disabled={!live || !text.trim()} onClick={sendText}>Send</button>
         </div>
       </div>
+
+      <TalkingCharacter
+        state={state}
+        look={look}
+        onLookChange={changeLook}
+        levels={levels}
+        caption={lastAgentLine}
+        muted={muted}
+        reaction={reaction}
+        disabled={!agentId}
+        onActivate={() => (live ? toggleMute() : start(true))}
+        onEnd={stop}
+        storageKey="voice-console-character"
+      />
     </div>
   )
 }
