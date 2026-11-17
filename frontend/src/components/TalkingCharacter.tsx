@@ -14,14 +14,21 @@
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import type { AgentState } from '../services/voiceClient'
+import {
+  DEFAULT_MANGA, LIPSYNC_MOUTHS, MOUTH, MangaEditor, MangaFaceAvatar, mouthUrl, preloadMouths, type MangaLook,
+} from './MangaFaceAvatar'
 
 export type HairStyle = 'short' | 'long' | 'bun' | 'curly' | 'none'
 export type Accessory = 'headset' | 'glasses' | 'none'
 export type CharacterSize = 'sm' | 'md' | 'lg'
 export type Reaction = 'surprised' | 'concerned' | 'goodbye' | null
 
+export type CharacterStyle = 'manga' | 'classic'
+
 export interface CharacterLook {
   name: string
+  style: CharacterStyle
+  manga: MangaLook
   skin: string
   hairStyle: HairStyle
   hairColor: string
@@ -31,7 +38,7 @@ export interface CharacterLook {
 }
 
 export const DEFAULT_LOOK: CharacterLook = {
-  name: 'Assistant', skin: '#c68863', hairStyle: 'long', hairColor: '#2b1d16', outfit: '#4f46e5',
+  name: 'Assistant', style: 'manga', manga: DEFAULT_MANGA, skin: '#c68863', hairStyle: 'long', hairColor: '#2b1d16', outfit: '#4f46e5',
   accessory: 'headset', size: 'md',
 }
 
@@ -124,8 +131,13 @@ export default function TalkingCharacter(props: Props) {
     armL: useRef<SVGGElement>(null), armR: useRef<SVGGElement>(null), ring: useRef<SVGCircleElement>(null),
     dots: useRef<SVGGElement>(null), shadow: useRef<SVGEllipseElement>(null),
   }
-  const live_ = useRef({ state, reaction, muted })
-  live_.current = { state, reaction, muted }
+  const mf = {
+    head: useRef<HTMLDivElement>(null), body: useRef<HTMLDivElement>(null), eyes: useRef<HTMLDivElement>(null),
+    brows: useRef<HTMLDivElement>(null), mouth: useRef<HTMLImageElement>(null),
+  }
+  const live_ = useRef({ state, reaction, muted, look })
+  live_.current = { state, reaction, muted, look }
+  useEffect(() => { if (look.style === 'manga') preloadMouths(look.manga.skin) }, [look.style, look.manga.skin])
   const levelsRef = useRef(levels)
   levelsRef.current = levels
 
@@ -208,6 +220,26 @@ export default function TalkingCharacter(props: Props) {
           c.setAttribute('opacity', (0.3 + 0.7 * Math.max(0, Math.sin(t * 5 - i * 0.9))).toFixed(2)))
       }
       r.shadow.current?.setAttribute('rx', (46 - breathe).toFixed(2))
+
+      // MangaFace: same motion, applied to the PNG layers; lip-sync swaps between mouth drawings.
+      if (mf.head.current) {
+        const ml = live_.current.look.manga
+        mf.body.current!.style.transform = `translateY(${breathe.toFixed(2)}px)`
+        mf.head.current.style.transform =
+          `translate(${cur.lean.toFixed(2)}px, ${(breathe + talkBob + nod - cur.mouth * 1.5).toFixed(2)}px) rotate(${(cur.tilt * 0.7 + talkBob * 0.5).toFixed(2)}deg)`
+        mf.eyes.current!.style.transform = `scaleY(${Math.min(1.15, cur.eyeOpen).toFixed(3)})`
+        mf.brows.current!.style.transform = `translateY(${(-cur.brow).toFixed(2)}px)`
+        let mouthN = ml.mouth
+        if (rx === 'surprised') mouthN = MOUTH.surprised
+        else if (speaking) {
+          const v = cur.mouth
+          mouthN = LIPSYNC_MOUTHS[v < 0.06 ? 0 : v < 0.2 ? 1 : v < 0.4 ? 2 : v < 0.65 ? 3 : 4]
+        } else if (s === 'listening') mouthN = MOUTH.listening
+        else if (s === 'thinking') mouthN = MOUTH.thinking
+        const img = mf.mouth.current!
+        const key = `${ml.skin}/${mouthN}`
+        if (img.dataset.key !== key) { img.dataset.key = key; img.src = mouthUrl(ml.skin, mouthN) }
+      }
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
@@ -251,7 +283,16 @@ export default function TalkingCharacter(props: Props) {
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null }}
         onKeyDown={onKeyDown}
       >
-        <CharacterSvg look={look} r={r} muted={!!muted} live={live} />
+        {look.style === 'manga' ? (
+          <div className="relative">
+            <MangaFaceAvatar look={look.manga} refs={mf} width={size} />
+            {live && <span className={`absolute bottom-2 right-3 h-3 w-3 rounded-full ring-2 ring-white ${muted ? 'bg-rose-500' : 'bg-emerald-400'}`} />}
+            {state === 'thinking' && <span className="absolute -top-1 right-2 animate-pulse text-2xl text-slate-400">…</span>}
+            {state === 'listening' && <span className="pointer-events-none absolute inset-0 animate-ping rounded-full ring-4 ring-emerald-300/50" style={{ animationDuration: '1.6s' }} />}
+          </div>
+        ) : (
+          <CharacterSvg look={look} r={r} muted={!!muted} live={live} />
+        )}
       </div>
 
       {/* controls */}
@@ -273,17 +314,32 @@ export default function TalkingCharacter(props: Props) {
             <span className="label">Name</span>
             <input className="input" value={look.name} maxLength={24} onChange={(e) => set('name', e.target.value)} />
           </label>
-          <Swatches label="Skin" options={SKINS} value={look.skin} onChange={(v) => set('skin', v)} />
           <div>
-            <span className="label">Hair</span>
-            <Segmented options={['short', 'long', 'bun', 'curly', 'none'] as HairStyle[]} value={look.hairStyle} onChange={(v) => set('hairStyle', v)} />
+            <span className="label">Style</span>
+            <Segmented options={['manga', 'classic'] as CharacterStyle[]} value={look.style} onChange={(v) => set('style', v)} />
           </div>
-          {look.hairStyle !== 'none' && <Swatches label="Hair colour" options={HAIR_COLORS} value={look.hairColor} onChange={(v) => set('hairColor', v)} />}
-          <Swatches label="Outfit" options={OUTFITS} value={look.outfit} onChange={(v) => set('outfit', v)} />
-          <div>
-            <span className="label">Accessory</span>
-            <Segmented options={['headset', 'glasses', 'none'] as Accessory[]} value={look.accessory} onChange={(v) => set('accessory', v)} />
-          </div>
+          {look.style === 'manga' ? (
+            <>
+              <MangaEditor look={look.manga} onChange={(v) => set('manga', v)} />
+              <p className="text-[11px] leading-snug text-slate-400">
+                Art: <a className="underline" href="https://github.com/miladnia/MangaFace" target="_blank" rel="noreferrer">MangaFace</a> by Milad Abdollahnia (MIT)
+              </p>
+            </>
+          ) : (
+            <>
+              <Swatches label="Skin" options={SKINS} value={look.skin} onChange={(v) => set('skin', v)} />
+              <div>
+                <span className="label">Hair</span>
+                <Segmented options={['short', 'long', 'bun', 'curly', 'none'] as HairStyle[]} value={look.hairStyle} onChange={(v) => set('hairStyle', v)} />
+              </div>
+              {look.hairStyle !== 'none' && <Swatches label="Hair colour" options={HAIR_COLORS} value={look.hairColor} onChange={(v) => set('hairColor', v)} />}
+              <Swatches label="Outfit" options={OUTFITS} value={look.outfit} onChange={(v) => set('outfit', v)} />
+              <div>
+                <span className="label">Accessory</span>
+                <Segmented options={['headset', 'glasses', 'none'] as Accessory[]} value={look.accessory} onChange={(v) => set('accessory', v)} />
+              </div>
+            </>
+          )}
           <div>
             <span className="label">Size</span>
             <Segmented options={['sm', 'md', 'lg'] as CharacterSize[]} value={look.size} onChange={(v) => set('size', v)} />
