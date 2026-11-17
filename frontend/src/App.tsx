@@ -1,0 +1,43 @@
+import type { ReactNode } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider, useAuth } from './hooks/useAuth'
+import AppLayout from './layouts/AppLayout'
+import { BusinessProfile, Integrations, Tenants } from './pages/Admin'
+import Agents from './pages/Agents'
+import BusinessData from './pages/BusinessData'
+import { CallDetail, Calls } from './pages/Calls'
+import Dashboard from './pages/Dashboard'
+import Knowledge from './pages/Knowledge'
+import Login from './pages/Login'
+import VoiceConsole from './pages/VoiceConsole'
+
+function Protected({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="p-8 text-sm text-slate-500">Loading…</div>
+  return user ? <>{children}</> : <Navigate to="/login" replace />
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<Protected><AppLayout /></Protected>}>
+            <Route index element={<Dashboard />} />
+            <Route path="voice" element={<VoiceConsole />} />
+            <Route path="agents" element={<Agents />} />
+            <Route path="knowledge" element={<Knowledge />} />
+            <Route path="calls" element={<Calls />} />
+            <Route path="calls/:id" element={<CallDetail />} />
+            <Route path="data" element={<BusinessData />} />
+            <Route path="integrations" element={<Integrations />} />
+            <Route path="business" element={<BusinessProfile />} />
+            <Route path="tenants" element={<Tenants />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  )
+}
