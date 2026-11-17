@@ -19,7 +19,8 @@ import {
   DEFAULT_MANGA, LIPSYNC_MOUTHS, MOUTH, MangaEditor, MangaFaceAvatar, mouthUrl, preloadMouths, type MangaLook,
 } from './MangaFaceAvatar'
 import RealisticAvatar, {
-  DEFAULT_REALISTIC, REAL_HAIR, REAL_OUTFIT, REAL_SKIN, type RealisticDriver, type RealisticLook, type RealisticMood,
+  DEFAULT_REALISTIC, REALISTIC_MODELS, REAL_HAIR, REAL_OUTFIT, REAL_SKIN, realisticModel,
+  type RealisticDriver, type RealisticLook, type RealisticMood,
 } from './RealisticAvatar'
 
 export type HairStyle = 'short' | 'long' | 'bun' | 'curly' | 'none'
@@ -402,8 +403,30 @@ export default function TalkingCharacter(props: Props) {
               <div className="min-h-0 space-y-4 overflow-y-auto p-6 text-sm">
                 {look.style === 'realistic' ? (
                   <>
+                    <div>
+                      <span className="label">Character</span>
+                      <div role="radiogroup" aria-label="Realistic character" className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                        {REALISTIC_MODELS.map((m) => (
+                          <button key={m.id} type="button" role="radio" aria-checked={realLook.model === m.id} onClick={() => {
+                              // Picking a character also gives it its name.
+                              const cur = latestLook.current
+                              commitLook({ ...cur, name: m.name, realistic: { ...DEFAULT_REALISTIC, ...(cur.realistic ?? {}), model: m.id, ...m.tints } })
+                            }}
+                            className={`rounded-2xl px-2 py-2.5 text-center ring-1 transition duration-300 active:scale-95 ${realLook.model === m.id ? 'bg-brand-50 ring-2 ring-brand-500' : 'bg-white ring-slate-200 hover:bg-slate-50'}`}>
+                            <span className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#f472b6] to-[#8e5cf7] text-sm font-semibold text-white">{m.name[0]}</span>
+                            <span className="mt-1 block truncate text-[12px] font-medium text-slate-900" title={m.name}>{m.name}</span>
+                            <span className={`block text-[10px] ${m.commercial ? 'text-emerald-600' : 'text-amber-600'}`}>{m.commercial ? 'Commercial OK' : 'Demo only'}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {!realisticModel(realLook.model).commercial && (
+                        <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800">
+                          {realisticModel(realLook.model).name} ({realisticModel(realLook.model).credit}) is licensed for non-commercial use only. Use Nandhini, Divyadharshini or your own model before selling this product.
+                        </p>
+                      )}
+                    </div>
                     <NamedSwatches label="Skin tone" options={REAL_SKIN} value={realLook.skin} onChange={(v) => setReal({ skin: v })} />
-                    <NamedSwatches label="Hair colour" options={REAL_HAIR} value={realLook.hair} onChange={(v) => setReal({ hair: v })} />
+                    {realisticModel(realLook.model).groups.hair.length > 0 && <NamedSwatches label="Hair colour" options={REAL_HAIR} value={realLook.hair} onChange={(v) => setReal({ hair: v })} />}
                     <NamedSwatches label="Outfit" options={REAL_OUTFIT} value={realLook.outfit} onChange={(v) => setReal({ outfit: v })} />
                     <div>
                       <span className="label">Expression</span>
@@ -414,7 +437,7 @@ export default function TalkingCharacter(props: Props) {
                       <Segmented options={['upper', 'head'] as RealisticLook['framing'][]} value={realLook.framing} onChange={(v) => setReal({ framing: v })} />
                     </div>
                     <p className="text-[11px] leading-snug text-slate-400">
-                      3D: <a className="underline" href="https://github.com/met4citizen/TalkingHead" target="_blank" rel="noreferrer">TalkingHead</a> by Mika Suominen (MIT) · model made with MPFB/MakeHuman (CC0)
+                      3D: <a className="underline" href="https://github.com/met4citizen/TalkingHead" target="_blank" rel="noreferrer">TalkingHead</a> by Mika Suominen (MIT) · model: {realisticModel(realLook.model).credit}
                     </p>
                   </>
                 ) : look.style === 'manga' ? (

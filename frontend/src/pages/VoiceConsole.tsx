@@ -107,7 +107,7 @@ export default function VoiceConsole() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="animate-rise relative mb-10 text-center">
-        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -z-10 h-72 w-[42rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-100 via-violet-100 to-pink-100 opacity-60 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -z-10 h-72 w-[min(42rem,100vw)] -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-100 via-violet-100 to-pink-100 opacity-60 blur-3xl" />
         <p className="eyebrow">Voice Console</p>
         <h1 className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 md:text-6xl">Talk to <span className="text-gradient">{look.name}</span>.</h1>
         <p className="mx-auto mt-4 max-w-xl text-[19px] leading-relaxed text-slate-500">

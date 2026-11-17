@@ -1,15 +1,21 @@
-# Realistic avatar model
+# Realistic avatar models
 
-`woman.glb` is `avatars/mpfb.glb` from [TalkingHead](https://github.com/met4citizen/TalkingHead)
-by Mika Suominen. Per the TalkingHead README it was created with Blender and
-[MPFB](https://static.makehumancommunity.org/mpfb.html) (MakeHuman) and is licensed **CC0**
-(public domain), so it may be shipped in commercial products.
+All models come from the [TalkingHead](https://github.com/met4citizen/TalkingHead) repository by
+Mika Suominen. The renderer, `@met4citizen/talkinghead` (npm), is MIT licensed. **Each model has its own
+licence; check it before you ship.**
 
-Changes made here: textures downscaled to at most 1024 px (opaque ones re-encoded as JPEG) to cut
-the file from about 37 MB to about 20 MB. Geometry, rig and blendshapes (ARKit + Oculus visemes) are
-unchanged.
+| In the app | File | Source | Licence | Commercial use |
+|---|---|---|---|---|
+| Nandhini, Divyadharshini | `woman.glb` (same model, different colours) | `avatars/mpfb.glb`, made with Blender + [MPFB](https://static.makehumancommunity.org/mpfb.html) (MakeHuman) | CC0 | **Yes** |
+| Nandhika | `samples/brunette.glb` | `avatars/brunette.glb`, Ready Player Me | CC BY-NC 4.0 | **No** |
+| Rashmi | `samples/avaturn.glb` | `avatars/avaturn.glb`, Avaturn | Avaturn terms, non-commercial | **No** (commercial use needs Avaturn's permission) |
+| Aarya | `samples/vroid.glb` | `avatars/vroid.glb`, made with VRoid Studio (anime-style 3D) | non-commercial | **No** |
 
-The renderer, `@met4citizen/talkinghead` (npm), is MIT licensed.
+Nandhika, Rashmi and Aarya are for demos and development only. The editor marks them "Demo only" and shows a
+warning. Before selling the product, remove them or replace them with models you have a commercial
+licence for (any GLB with a Mixamo-compatible rig plus ARKit and Oculus viseme blendshapes works; see
+the TalkingHead README, Appendix A). Add a model by appending to `REALISTIC_MODELS` in
+`src/components/RealisticAvatar.tsx`.
 
-Do not swap in TalkingHead's other sample avatars (brunette, avaturn, avatarsdk, vroid) for
-production: they are licensed for non-commercial use only.
+Changes made here: `woman.glb` had its textures downscaled to at most 1024 px (opaque ones re-encoded
+as JPEG), cutting it from about 37 MB to about 20 MB. The three samples are unchanged.

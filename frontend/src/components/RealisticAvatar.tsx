@@ -1,9 +1,9 @@
 /**
- * Realistic 3D woman avatar.
+ * Realistic 3D avatars (five characters).
  *
  * Renderer: TalkingHead by Mika Suominen (MIT), https://github.com/met4citizen/TalkingHead
- * Model:    `mpfb.glb` from the TalkingHead repo, made with Blender + MPFB (MakeHuman), CC0.
- *           Textures were downscaled to 1024 px to keep the download near 20 MB.
+ * Models:   from the TalkingHead repo; see public/avatars/realistic/README.md. Nandhini and
+ *           Divyadharshini (MPFB, CC0) may be used commercially; the other three are non-commercial only.
  *
  * Lip-sync is driven from the agent audio's loudness (we have no word timings from streaming TTS):
  * every ~90 ms a new mouth shape (Oculus viseme) is picked and scaled by the loudness, with the jaw
@@ -14,12 +14,82 @@ import { useEffect, useRef, useState } from 'react'
 import type { SceneNode, TalkingHead as TalkingHeadT } from '@met4citizen/talkinghead'
 import type { AgentState } from '../services/voiceClient'
 
-export const REALISTIC_MODEL_URL = '/avatars/realistic/woman.glb'
+export type RealisticModelId = 'nandhini' | 'nandhika' | 'rashmi' | 'aarya' | 'divyadharshini'
+
+type Groups = Record<'skin' | 'hair' | 'outfit', string[]>
+type Tints = Pick<RealisticLook, 'skin' | 'hair' | 'outfit'>
+export interface RealisticModel {
+  id: RealisticModelId
+  name: string
+  /** true = free for commercial use; false = non-commercial licence only */
+  commercial: boolean
+  credit: string
+  url: string
+  avatar: Record<string, unknown>
+  /** glTF material names to tint (three.js rewrites node names, but keeps material names) */
+  groups: Groups
+  /** colours applied when this character is picked ('#ffffff' = as modelled) */
+  tints: Tints
+}
+
+const AS_MODELLED: Tints = { skin: '#ffffff', hair: '#ffffff', outfit: '#ffffff' }
+const MPFB = {
+  url: '/avatars/realistic/woman.glb',
+  credit: 'MPFB / MakeHuman · CC0',
+  avatar: { body: 'F', baseline: { headRotateX: -0.01, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 } },
+  groups: { skin: ['Human.body'], hair: ['Human.ponytail01'], outfit: ['Human.female_casualsuit01'] },
+}
+
+export const REALISTIC_MODELS: RealisticModel[] = [
+  { id: 'nandhini', name: 'Nandhini', commercial: true, ...MPFB, tints: AS_MODELLED },
+  {
+    id: 'nandhika', name: 'Nandhika', commercial: false, credit: 'Ready Player Me · CC BY-NC 4.0',
+    url: '/avatars/realistic/samples/brunette.glb',
+    avatar: { body: 'F' },
+    groups: { skin: ['Wolf3D_Skin', 'Wolf3D_Body'], hair: ['Wolf3D_Hair'], outfit: ['Wolf3D_Outfit_Top', 'Wolf3D_Outfit_Bottom'] },
+    tints: AS_MODELLED,
+  },
+  {
+    id: 'rashmi', name: 'Rashmi', commercial: false, credit: 'Avaturn · non-commercial',
+    url: '/avatars/realistic/samples/avaturn.glb',
+    avatar: {
+      body: 'F',
+      retarget: {
+        Hips: { y: 0.03 }, Spine: { y: 0.02 }, Spine1: { y: 0.02, z: 0.01 },
+        Spine2: { y: 0.02, z: 0.01 }, Neck: { z: 0.02, y: 0.01 }, Head: { z: 0.02 },
+        LeftShoulder: { rx: -0.5 }, RightShoulder: { rx: -0.5 },
+        scaleToHipsLevel: 1.0,
+      },
+      baseline: { headRotateX: -0.05, eyeBlinkLeft: 0.15, eyeBlinkRight: 0.15 },
+    },
+    groups: { skin: ['Body', 'Head'], hair: ['avaturn_hair_0_material', 'avaturn_hair_1_material'], outfit: ['avaturn_look_0_material'] },
+    tints: AS_MODELLED,
+  },
+  {
+    id: 'aarya', name: 'Aarya', commercial: false, credit: 'VRoid Studio sample · non-commercial',
+    url: '/avatars/realistic/samples/vroid.glb',
+    avatar: { body: 'F', baseline: { headRotateX: -0.1, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 } },
+    groups: {
+      skin: ['N00_000_00_Body_00_SKIN (Instance)', 'N00_000_00_Face_00_SKIN (Instance)'],
+      hair: ['N00_000_Hair_00_HAIR (Instance)'],
+      outfit: [
+        'N00_010_01_Onepiece_00_CLOTH_01 (Instance)', 'N00_010_01_Onepiece_00_CLOTH_02 (Instance)',
+        'N00_007_01_Tops_01_CLOTH_01 (Instance)', 'N00_007_01_Tops_01_CLOTH_02 (Instance)',
+        'N00_002_03_Tops_01_CLOTH_01 (Instance)', 'N00_002_03_Tops_01_CLOTH_02 (Instance)',
+      ],
+    },
+    tints: AS_MODELLED,
+  },
+  // Same CC0 model as Nandhini with her own colouring, so she is also safe to sell.
+  { id: 'divyadharshini', name: 'Divyadharshini', commercial: true, ...MPFB, tints: { skin: '#b07a58', hair: '#2a1f1a', outfit: '#b9a6ff' } },
+]
+export const realisticModel = (id: string | undefined) => REALISTIC_MODELS.find((m) => m.id === id) ?? REALISTIC_MODELS[0]
 
 export type RealisticMood = 'neutral' | 'happy' | 'love'
 export type RealisticFraming = 'head' | 'upper'
 
 export interface RealisticLook {
+  model: RealisticModelId
   mood: RealisticMood
   framing: RealisticFraming
   skin: string
@@ -27,7 +97,7 @@ export interface RealisticLook {
   outfit: string
 }
 
-export const DEFAULT_REALISTIC: RealisticLook = { mood: 'happy', framing: 'upper', skin: '#ffffff', hair: '#ffffff', outfit: '#ffffff' }
+export const DEFAULT_REALISTIC: RealisticLook = { model: 'nandhini', mood: 'happy', framing: 'upper', skin: '#ffffff', hair: '#ffffff', outfit: '#ffffff' }
 
 // Colours multiply the original textures, so '#ffffff' means "as modelled".
 export const REAL_SKIN = [
@@ -39,13 +109,6 @@ export const REAL_HAIR = [
 export const REAL_OUTFIT = [
   { v: '#ffffff', n: 'Original' }, { v: '#6f9cff', n: 'Blue' }, { v: '#7ccfb6', n: 'Teal' }, { v: '#ff8f8f', n: 'Coral' }, { v: '#b9a6ff', n: 'Lavender' }, { v: '#4a4a4f', n: 'Graphite' },
 ]
-
-// Matched against glTF material names (three.js rewrites node names, but keeps material names).
-const MATERIAL_GROUPS: Record<keyof Pick<RealisticLook, 'skin' | 'hair' | 'outfit'>, string[]> = {
-  skin: ['Human.body'],
-  hair: ['Human.ponytail01'],
-  outfit: ['Human.female_casualsuit01'],
-}
 
 const VIEW_OPT: Record<RealisticFraming, Record<string, number>> = {
   head: { cameraDistance: 1, cameraY: 0 },
@@ -81,20 +144,26 @@ interface Props {
   className?: string
 }
 
-function applyTints(scene: SceneNode | null, look: RealisticLook) {
+function applyTints(scene: SceneNode | null, look: RealisticLook, groups: Groups) {
   if (!scene) return
   scene.traverse((o) => {
     if (!o.isMesh || !o.material) return
     const mats = Array.isArray(o.material) ? o.material : [o.material]
     for (const m of mats) {
-      for (const [key, names] of Object.entries(MATERIAL_GROUPS) as [keyof typeof MATERIAL_GROUPS, string[]][]) {
+      for (const [key, names] of Object.entries(groups) as [keyof Groups, string[]][]) {
         if (m.name && names.includes(m.name)) m.color?.set(look[key])
       }
     }
   })
 }
 
-export default function RealisticAvatar({ look, width, height, driver, className }: Props) {
+/** Remounts the renderer when the model changes (TalkingHead loads one model per instance). */
+export default function RealisticAvatar(props: Props) {
+  return <RealisticAvatarInner key={realisticModel(props.look.model).id} {...props} />
+}
+
+function RealisticAvatarInner({ look, width, height, driver, className }: Props) {
+  const model = realisticModel(look.model)
   const host = useRef<HTMLDivElement>(null)
   const head = useRef<TalkingHeadT | null>(null)
   const scene = useRef<SceneNode | null>(null)
@@ -124,12 +193,12 @@ export default function RealisticAvatar({ look, width, height, driver, className
           modelPixelRatio: Math.min(2, window.devicePixelRatio || 1), // crisp on high-DPI screens
         })
         await th.showAvatar(
-          { url: REALISTIC_MODEL_URL, body: 'F', avatarMood: lookRef.current.mood, lipsyncLang: 'en', baseline: { headRotateX: -0.01, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 } },
+          { ...model.avatar, url: model.url, avatarMood: lookRef.current.mood, lipsyncLang: 'en' },
           (e) => { if (e.lengthComputable) setProgress(e.loaded / e.total) },
           (gltf) => { scene.current = gltf.scene },
         )
         if (cancelled) { th.dispose(); return }
-        applyTints(scene.current, lookRef.current)
+        applyTints(scene.current, lookRef.current, model.groups)
         head.current = th
         installDriver(th, driver)
         setStatus('ready')
@@ -151,7 +220,7 @@ export default function RealisticAvatar({ look, width, height, driver, className
   }, [])
 
   // Live look changes.
-  useEffect(() => { applyTints(scene.current, look) }, [look, status])
+  useEffect(() => { applyTints(scene.current, look, model.groups) }, [look, status, model.groups])
   useEffect(() => { if (status === 'ready') try { head.current?.setMood(look.mood) } catch { /* unknown mood */ } }, [look.mood, status])
   useEffect(() => { if (status === 'ready' && head.current) frame(head.current, look.framing) }, [look.framing, status])
 
