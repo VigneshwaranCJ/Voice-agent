@@ -1,5 +1,5 @@
 /**
- * Realistic 3D avatars (five characters).
+ * Realistic avatars: animated photo portraits (PhotoAvatar) and 3D characters (TalkingHead).
  *
  * Renderer: TalkingHead by Mika Suominen (MIT), https://github.com/met4citizen/TalkingHead
  * Models:   from the TalkingHead repo; see public/avatars/realistic/README.md. Nandhini and
@@ -13,14 +13,18 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SceneNode, TalkingHead as TalkingHeadT } from '@met4citizen/talkinghead'
 import type { AgentState } from '../services/voiceClient'
+import PhotoAvatar, { type PortraitSpec } from './PhotoAvatar'
 
-export type RealisticModelId = 'nandhini' | 'nandhika' | 'rashmi' | 'aarya' | 'divyadharshini'
+export type RealisticModelId = 'kavya' | 'amara' | 'nandhini' | 'nandhika' | 'rashmi' | 'aarya' | 'divyadharshini'
 
 type Groups = Record<'skin' | 'hair' | 'outfit', string[]>
 type Tints = Pick<RealisticLook, 'skin' | 'hair' | 'outfit'>
 export interface RealisticModel {
   id: RealisticModelId
   name: string
+  /** 'photo' = animated portrait (PhotoAvatar); '3d' = TalkingHead model */
+  kind: 'photo' | '3d'
+  portrait?: PortraitSpec
   /** true = free for commercial use; false = non-commercial licence only */
   commercial: boolean
   credit: string
@@ -40,17 +44,41 @@ const MPFB = {
   groups: { skin: ['Human.body'], hair: ['Human.ponytail01'], outfit: ['Human.female_casualsuit01'] },
 }
 
+const PHOTO = { kind: 'photo' as const, commercial: true, credit: 'Your portrait', avatar: {}, groups: { skin: [], hair: [], outfit: [] }, tints: AS_MODELLED }
+
 export const REALISTIC_MODELS: RealisticModel[] = [
-  { id: 'nandhini', name: 'Nandhini', commercial: true, ...MPFB, tints: AS_MODELLED },
   {
-    id: 'nandhika', name: 'Nandhika', commercial: false, credit: 'Ready Player Me · CC BY-NC 4.0',
+    id: 'kavya', name: 'Kavya', ...PHOTO, url: '/avatars/photo/portrait-1.jpg',
+    portrait: {
+      src: '/avatars/photo/portrait-1.jpg',
+      mouth: { x: 0.5016, y: 0.4414 }, mouthHalfWidth: 0.0536, chinY: 0.4929,
+      head: { x: 0.5048, y: 0.3893, rx: 0.134, ry: 0.1179 }, nose: { x: 0.5038, y: 0.3971 },
+      eyes: [{ x: 0.4277, y: 0.3486, w: 0.0332, h: 0.00714 }, { x: 0.5681, y: 0.3471, w: 0.0332, h: 0.00714 }],
+      neck: { x: 0.495, halfWidth: 0.0857, shoulderY: 0.621 },
+      frames: { upper: { x: 0.5, y: 0.43, h: 0.6 }, head: { x: 0.5, y: 0.38, h: 0.36 } },
+    },
+  },
+  {
+    id: 'amara', name: 'Amara', ...PHOTO, url: '/avatars/photo/portrait-2.jpg',
+    portrait: {
+      src: '/avatars/photo/portrait-2.jpg',
+      mouth: { x: 0.529, y: 0.5145 }, mouthHalfWidth: 0.056, chinY: 0.6137,
+      head: { x: 0.538, y: 0.4007, rx: 0.1534, ry: 0.231 }, nose: { x: 0.5253, y: 0.4495 },
+      eyes: [{ x: 0.435, y: 0.35, w: 0.0325, h: 0.0108 }, { x: 0.603, y: 0.361, w: 0.0415, h: 0.0126 }],
+      neck: { x: 0.534, halfWidth: 0.112, shoulderY: 0.812 },
+      frames: { upper: { x: 0.5, y: 0.5, h: 1 }, head: { x: 0.52, y: 0.46, h: 0.64 } },
+    },
+  },
+  { id: 'nandhini', name: 'Nandhini', kind: '3d', commercial: true, ...MPFB, tints: AS_MODELLED },
+  {
+    id: 'nandhika', name: 'Nandhika', kind: '3d', commercial: false, credit: 'Ready Player Me · CC BY-NC 4.0',
     url: '/avatars/realistic/samples/brunette.glb',
     avatar: { body: 'F' },
     groups: { skin: ['Wolf3D_Skin', 'Wolf3D_Body'], hair: ['Wolf3D_Hair'], outfit: ['Wolf3D_Outfit_Top', 'Wolf3D_Outfit_Bottom'] },
     tints: AS_MODELLED,
   },
   {
-    id: 'rashmi', name: 'Rashmi', commercial: false, credit: 'Avaturn · non-commercial',
+    id: 'rashmi', name: 'Rashmi', kind: '3d', commercial: false, credit: 'Avaturn · non-commercial',
     url: '/avatars/realistic/samples/avaturn.glb',
     avatar: {
       body: 'F',
@@ -66,7 +94,7 @@ export const REALISTIC_MODELS: RealisticModel[] = [
     tints: AS_MODELLED,
   },
   {
-    id: 'aarya', name: 'Aarya', commercial: false, credit: 'VRoid Studio sample · non-commercial',
+    id: 'aarya', name: 'Aarya', kind: '3d', commercial: false, credit: 'VRoid Studio sample · non-commercial',
     url: '/avatars/realistic/samples/vroid.glb',
     avatar: { body: 'F', baseline: { headRotateX: -0.1, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 } },
     groups: {
@@ -81,7 +109,7 @@ export const REALISTIC_MODELS: RealisticModel[] = [
     tints: AS_MODELLED,
   },
   // Same CC0 model as Nandhini with her own colouring, so she is also safe to sell.
-  { id: 'divyadharshini', name: 'Divyadharshini', commercial: true, ...MPFB, tints: { skin: '#b07a58', hair: '#2a1f1a', outfit: '#b9a6ff' } },
+  { id: 'divyadharshini', name: 'Divyadharshini', kind: '3d', commercial: true, ...MPFB, tints: { skin: '#b07a58', hair: '#2a1f1a', outfit: '#b9a6ff' } },
 ]
 export const realisticModel = (id: string | undefined) => REALISTIC_MODELS.find((m) => m.id === id) ?? REALISTIC_MODELS[0]
 
@@ -97,7 +125,7 @@ export interface RealisticLook {
   outfit: string
 }
 
-export const DEFAULT_REALISTIC: RealisticLook = { model: 'nandhini', mood: 'happy', framing: 'upper', skin: '#ffffff', hair: '#ffffff', outfit: '#ffffff' }
+export const DEFAULT_REALISTIC: RealisticLook = { model: 'kavya', mood: 'happy', framing: 'upper', skin: '#ffffff', hair: '#ffffff', outfit: '#ffffff' }
 
 // Colours multiply the original textures, so '#ffffff' means "as modelled".
 export const REAL_SKIN = [
@@ -159,7 +187,11 @@ function applyTints(scene: SceneNode | null, look: RealisticLook, groups: Groups
 
 /** Remounts the renderer when the model changes (TalkingHead loads one model per instance). */
 export default function RealisticAvatar(props: Props) {
-  return <RealisticAvatarInner key={realisticModel(props.look.model).id} {...props} />
+  const m = realisticModel(props.look.model)
+  if (m.kind === 'photo' && m.portrait) {
+    return <PhotoAvatar key={m.id} spec={m.portrait} framing={props.look.framing} width={props.width} height={props.height} driver={props.driver} className={props.className} />
+  }
+  return <RealisticAvatarInner key={m.id} {...props} />
 }
 
 function RealisticAvatarInner({ look, width, height, driver, className }: Props) {
