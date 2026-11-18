@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     # Database / cache
     database_url: str = "sqlite+aiosqlite:///./voicecare.db"
     redis_url: str | None = None
+    # Single-server hosts without PostgreSQL (e.g. Windows/IIS shared hosting) may opt in to SQLite.
+    # SQLite allows one writer at a time: run exactly one app process and back up the .db file.
+    allow_sqlite_in_production: bool = False
+
+    # Built dashboard (frontend/dist) to serve from this process, for hosts without a separate web server.
+    frontend_dir: str | None = None
 
     # Security
     jwt_secret: str = "dev-only-change-me"
@@ -55,8 +61,10 @@ class Settings(BaseSettings):
             Fernet((self.encryption_key or "").encode())
         except Exception:
             errors.append("ENCRYPTION_KEY must be a valid Fernet key")
-        if self.is_sqlite:
+        if self.is_sqlite and not self.allow_sqlite_in_production:
             errors.append("DATABASE_URL must point to PostgreSQL, not SQLite")
+        elif self.is_sqlite:
+            warnings.append("Using SQLite in production: run a single app process and back up the database file")
         if any(o == "*" or "localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
             warnings.append("CORS_ORIGINS includes '*' or localhost; set it to your dashboard's https origin")
         if any(o.startswith("http://") for o in self.cors_origins if "localhost" not in o):

@@ -18,3 +18,6 @@ dist/
 coverage/
 .coverage
 uploads/
+
+# Windows/IIS bundle (contains .env secrets)
+/deploy/

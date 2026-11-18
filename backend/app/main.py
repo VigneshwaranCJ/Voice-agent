@@ -57,3 +57,9 @@ async def health():
     return {"status": "ok", "sarvam_configured": settings.sarvam_configured,
             "database": "sqlite" if settings.is_sqlite else "postgresql",
             "state_store": "redis" if settings.redis_url else "memory"}
+
+
+if settings.frontend_dir:  # last, so the dashboard's catch-all route never shadows the API
+    from app.core.frontend import mount_frontend
+
+    mount_frontend(app, settings.frontend_dir)
