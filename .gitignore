@@ -21,3 +21,5 @@ uploads/
 
 # Windows/IIS bundle (contains .env secrets)
 /deploy/
+
+*.zip
