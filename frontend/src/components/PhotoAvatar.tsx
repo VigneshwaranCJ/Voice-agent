@@ -67,6 +67,7 @@ uniform float uBreath;
 uniform mat4 uViewProj;
 out vec2 vUV;
 out float vShade;
+out float vFocus;
 
 float smax(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return max(a, b) + h * h * k * 0.25; }
 float gauss(vec2 d, vec2 s) { vec2 q = d / s; return exp(-dot(q, q)); }
@@ -109,6 +110,14 @@ void main() {
   vec3 L = normalize(vec3(-0.35, 0.45, 0.82));
   vShade = 1.0 + 0.9 * (dot(n1, L) - dot(n0, L));
   vUV = aUV;
+  // focus: head with its hair, the neck and hair column, and the chest; everything else is backdrop
+  float hdist = length((p - uHead.xy) / uHead.zw);
+  float f = 1.0 - smoothstep(1.35, 2.4, hdist);
+  f = max(f, (1.0 - smoothstep(1.6, 2.6, abs(p.x - uNeck.x) / uNeck.y))
+           * (1.0 - smoothstep(uNeck.z + uHead.w * 0.6, uNeck.z + uHead.w * 1.2, p.y))
+           * smoothstep(uHead.y - uHead.w, uHead.y, p.y));
+  vec2 tq = (p - vec2(uNeck.x, uImg.y * 1.25)) / vec2(uImg.x * 0.6, uImg.y * 1.25 - uNeck.z);
+  vFocus = max(f, 1.0 - smoothstep(0.8, 1.0, dot(tq, tq)));
   gl_Position = uViewProj * vec4(P, 1.0);
 }`
 
@@ -116,8 +125,10 @@ const FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
 in float vShade;
+in float vFocus;
 uniform sampler2D uTex;
 uniform vec2 uImg;
+uniform vec2 uRes;
 uniform vec4 uEyeL, uEyeR;
 uniform vec3 uMouth;
 uniform float uHalfW;
@@ -161,9 +172,16 @@ void main() {
       inner = mix(inner, vec3(228.0, 218.0, 210.0) / 255.0, ta);
     }
   }
-  vec3 c = texture(uTex, s / uImg).rgb;
+  // portrait mode: the flat backdrop (no depth) is softly out of focus
+  vec3 c = texture(uTex, s / uImg, (1.0 - vFocus) * 2.0).rgb;
   c = mix(c, inner, ia);
-  outColor = vec4(c * vShade, 1.0);
+  c *= vShade;
+  // studio grade: gentle S-curve, a touch of warmth, soft vignette
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.18);
+  c *= vec3(1.015, 1.0, 0.985);
+  vec2 q = gl_FragCoord.xy / uRes - 0.5;
+  c *= 1.0 - dot(q, q) * 0.38;
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`
 
 // ---- tiny matrix helpers (column-major, like GLSL)
@@ -290,6 +308,7 @@ export default function PhotoAvatar({ spec, framing, width, height, driver, clas
       gl.uniform3f(U('uNeck'), spec.neck.x * W, spec.neck.halfWidth * W, shoulder)
       gl.uniform1f(U('uHalfW'), spec.mouthHalfWidth * W)
       gl.uniform1i(U('uTex'), 0)
+      gl.uniform2f(U('uRes'), cv.width, cv.height)
       // pivot: inside the neck, a little behind the face
       const pivotPx = { x: headPx.x, y: chin + (shoulder - chin) * 0.3, z: -headPx.rx * 0.2 }
       gl.uniform3f(U('uPivot'), (pivotPx.x - W / 2) / H, (H / 2 - pivotPx.y) / H, pivotPx.z / H)
@@ -386,7 +405,7 @@ export default function PhotoAvatar({ spec, framing, width, height, driver, clas
   }, [spec, width, height, driver])
 
   return (
-    <div className={`relative overflow-hidden rounded-[28px] bg-slate-200 shadow-[0_18px_40px_-14px_rgb(0_0_0/0.45)] ring-1 ring-black/5 ${className ?? ''}`} style={{ width, height }}>
+    <div className={`relative overflow-hidden bg-slate-200 ${className ?? ''}`} style={{ width, height }}>
       <div ref={host} className={status === 'still' ? 'hidden' : ''} />
       {status === 'loading' && <div className="skeleton absolute inset-0 rounded-none" />}
       {status === 'still' && (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CharacterThumb, realisticModel } from '../components/RealisticAvatar'
 import TalkingCharacter, { DEFAULT_LOOK, type CharacterLook, type Reaction } from '../components/TalkingCharacter'
 import { ErrorNote } from '../components/ui'
 import { useApi } from '../hooks/useApi'
@@ -34,14 +35,14 @@ export default function VoiceConsole() {
 
   // Character look is saved per agent in this browser.
   const agent = agents?.find((a) => a.id === agentId)
-  const lookKey = `character:v3:${agentId}:look`
+  const lookKey = `character:v4:${agentId}:look`
   const [look, setLook] = useState<CharacterLook>(DEFAULT_LOOK)
   useEffect(() => {
     if (!agentId) return
     let saved: Partial<CharacterLook> | null = null
     try { saved = JSON.parse(localStorage.getItem(lookKey) || 'null') } catch { /* ignore */ }
-    setLook({ ...DEFAULT_LOOK, name: agent?.name ?? DEFAULT_LOOK.name, ...(saved ?? {}) })
-  }, [agentId, lookKey, agent?.name])
+    setLook({ ...DEFAULT_LOOK, ...(saved ?? {}) }) // a new look starts as the default character, with her own name
+  }, [agentId, lookKey])
   const changeLook = (l: CharacterLook) => {
     setLook(l)
     try { localStorage.setItem(lookKey, JSON.stringify(l)) } catch { /* private mode */ }
@@ -102,16 +103,25 @@ export default function VoiceConsole() {
     setText('')
   }
 
+  const accent = realisticModel(look.realistic?.model).accent
   const dot = state === 'speaking' ? 'bg-brand-500' : state === 'listening' ? 'bg-emerald-500' : state === 'thinking' ? 'bg-amber-400' : state === 'connecting' ? 'bg-slate-400' : 'bg-slate-300'
 
   return (
     <div className="mx-auto max-w-4xl">
       <div className="animate-rise relative mb-10 text-center">
-        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -z-10 h-72 w-[min(42rem,100vw)] -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-100 via-violet-100 to-pink-100 opacity-60 blur-3xl" />
-        <p className="eyebrow">Voice Console</p>
-        <h1 className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 md:text-6xl">Talk to <span className="text-gradient">{look.name}</span>.</h1>
+        <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -z-10 h-72 w-[min(42rem,100vw)] -translate-x-1/2 rounded-full opacity-60 blur-3xl transition-[background] duration-700"
+          style={{ background: `linear-gradient(90deg, ${accent[0]}, #dbe8ff, ${accent[1]}55)` }} />
+        <div className="mx-auto mb-5 flex w-fit items-center gap-2.5 rounded-full bg-white/75 py-1.5 pl-1.5 pr-4 shadow-[var(--shadow-card)] ring-1 ring-black/5 backdrop-blur">
+          <span className="relative">
+            <CharacterThumb id={look.realistic?.model ?? DEFAULT_LOOK.realistic.model} size={34} />
+            <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${dot} ${state === 'speaking' || state === 'thinking' ? 'animate-pulse' : ''}`} />
+          </span>
+          <span className="text-[14px] font-medium text-slate-900">{look.name}</span>
+          <span className="text-[14px] text-slate-400">{state ? STATE_LABEL[state] : 'Ready to talk'}</span>
+        </div>
+        <h1 className="text-5xl font-semibold tracking-tight text-slate-900 md:text-6xl">Talk to <span className="text-gradient">{look.name}</span>.</h1>
         <p className="mx-auto mt-4 max-w-xl text-[19px] leading-relaxed text-slate-500">
-          Tap the character to start a call in English or Tamil. Interrupt any time. Drag it anywhere. Right-click, long-press or press E to restyle it.
+          Tap the character to start a call in English or Tamil. Interrupt any time. Drag it anywhere. Right-click, long-press or press E to choose and style a character.
         </p>
       </div>
       <ErrorNote error={error} />

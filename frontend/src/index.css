@@ -116,8 +116,18 @@ html.custom-cursor :is(input:not([type=range]):not([type=checkbox]):not([type=ra
 .stagger > *:nth-child(6) { animation-delay: 300ms; }
 .stagger > *:nth-child(n+7) { animation-delay: 360ms; }
 
+/* Avatar ring: a conic gradient spinning behind the portrait card, so only its edge shows. */
+@keyframes ring-spin { to { transform: rotate(1turn); } }
+.ring-spin { animation: ring-spin var(--spin, 8s) linear infinite; }
+/* Tiny equaliser bars in the speech bubble while the agent speaks. */
+@keyframes eq { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+.eq > span { animation: eq 0.9s ease-in-out infinite; transform-origin: bottom; }
+.eq > span:nth-child(2) { animation-delay: -0.3s; }
+.eq > span:nth-child(3) { animation-delay: -0.6s; }
+
 @media (prefers-reduced-motion: reduce) {
   .animate-rise, .animate-fade, .stagger > * { animation: none; }
+  .ring-spin, .eq > span { animation: none; }
   .card-hover:hover { transform: none; }
   .skeleton { animation: none; }
 }

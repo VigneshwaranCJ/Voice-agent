@@ -8,7 +8,9 @@ declare module '@met4citizen/talkinghead' {
   /** The bits of a three.js Object3D / Mesh that RealisticAvatar touches. */
   export interface SceneMaterial {
     name?: string
-    color?: { set(c: string): void }
+    color?: { set(c: string): { multiplyScalar(s: number): unknown } }
+    /** colour texture; set to null to show the plain material colour */
+    map?: unknown
     userData: Record<string, unknown>
     needsUpdate?: boolean
   }
