@@ -34,6 +34,8 @@ export interface RealisticModel {
   groups: Groups
   /** colours applied when this character is picked ('#ffffff' = as modelled) */
   tints: Tints
+  /** signature colours: studio backdrop, thumbnail and the speaking ring */
+  accent: [string, string]
 }
 
 const AS_MODELLED: Tints = { skin: '#ffffff', hair: '#ffffff', outfit: '#ffffff' }
@@ -48,7 +50,7 @@ const PHOTO = { kind: 'photo' as const, commercial: true, credit: 'Your portrait
 
 export const REALISTIC_MODELS: RealisticModel[] = [
   {
-    id: 'kavya', name: 'Kavya', ...PHOTO, url: '/avatars/photo/portrait-1.jpg',
+    id: 'kavya', name: 'Kavya', ...PHOTO, accent: ['#f8cf8a', '#e07a52'], url: '/avatars/photo/portrait-1.jpg',
     portrait: {
       src: '/avatars/photo/portrait-1.jpg',
       mouth: { x: 0.5016, y: 0.4414 }, mouthHalfWidth: 0.0536, chinY: 0.4929,
@@ -59,7 +61,7 @@ export const REALISTIC_MODELS: RealisticModel[] = [
     },
   },
   {
-    id: 'amara', name: 'Amara', ...PHOTO, url: '/avatars/photo/portrait-2.jpg',
+    id: 'amara', name: 'Amara', ...PHOTO, accent: ['#e3cdb9', '#9a6f5c'], url: '/avatars/photo/portrait-2.jpg',
     portrait: {
       src: '/avatars/photo/portrait-2.jpg',
       mouth: { x: 0.529, y: 0.5145 }, mouthHalfWidth: 0.056, chinY: 0.6137,
@@ -69,13 +71,13 @@ export const REALISTIC_MODELS: RealisticModel[] = [
       frames: { upper: { x: 0.5, y: 0.5, h: 1 }, head: { x: 0.52, y: 0.46, h: 0.64 } },
     },
   },
-  { id: 'nandhini', name: 'Nandhini', kind: '3d', commercial: true, ...MPFB, tints: AS_MODELLED },
+  { id: 'nandhini', name: 'Nandhini', kind: '3d', commercial: true, ...MPFB, tints: { ...AS_MODELLED, outfit: '#a9c9b6' }, accent: ['#d9ebe0', '#7fae95'] },
   {
     id: 'nandhika', name: 'Nandhika', kind: '3d', commercial: false, credit: 'Ready Player Me · CC BY-NC 4.0',
     url: '/avatars/realistic/samples/brunette.glb',
     avatar: { body: 'F' },
     groups: { skin: ['Wolf3D_Skin', 'Wolf3D_Body'], hair: ['Wolf3D_Hair'], outfit: ['Wolf3D_Outfit_Top', 'Wolf3D_Outfit_Bottom'] },
-    tints: AS_MODELLED,
+    tints: { ...AS_MODELLED, outfit: '#a9bcff' }, accent: ['#dce6ff', '#7f9cf0'],
   },
   {
     id: 'rashmi', name: 'Rashmi', kind: '3d', commercial: false, credit: 'Avaturn · non-commercial',
@@ -91,7 +93,7 @@ export const REALISTIC_MODELS: RealisticModel[] = [
       baseline: { headRotateX: -0.05, eyeBlinkLeft: 0.15, eyeBlinkRight: 0.15 },
     },
     groups: { skin: ['Body', 'Head'], hair: ['avaturn_hair_0_material', 'avaturn_hair_1_material'], outfit: ['avaturn_look_0_material'] },
-    tints: AS_MODELLED,
+    tints: { ...AS_MODELLED, outfit: '#f4b3c2' }, accent: ['#ffe1e8', '#e88aa3'],
   },
   {
     id: 'aarya', name: 'Aarya', kind: '3d', commercial: false, credit: 'VRoid Studio sample · non-commercial',
@@ -106,10 +108,10 @@ export const REALISTIC_MODELS: RealisticModel[] = [
         'N00_002_03_Tops_01_CLOTH_01 (Instance)', 'N00_002_03_Tops_01_CLOTH_02 (Instance)',
       ],
     },
-    tints: AS_MODELLED,
+    tints: { ...AS_MODELLED, outfit: '#cdbdff' }, accent: ['#ebe3ff', '#9b83f0'],
   },
   // Same CC0 model as Nandhini with her own colouring, so she is also safe to sell.
-  { id: 'divyadharshini', name: 'Divyadharshini', kind: '3d', commercial: true, ...MPFB, tints: { skin: '#b07a58', hair: '#2a1f1a', outfit: '#b9a6ff' } },
+  { id: 'divyadharshini', name: 'Divyadharshini', kind: '3d', commercial: true, ...MPFB, tints: { skin: '#b07a58', hair: '#2a1f1a', outfit: '#f6b08a' }, accent: ['#ffe4d2', '#f0936a'] },
 ]
 export const realisticModel = (id: string | undefined) => REALISTIC_MODELS.find((m) => m.id === id) ?? REALISTIC_MODELS[0]
 
@@ -135,7 +137,8 @@ export const REAL_HAIR = [
   { v: '#ffffff', n: 'Chestnut' }, { v: '#5c4033', n: 'Dark brown' }, { v: '#2a1f1a', n: 'Black' }, { v: '#c46a3a', n: 'Auburn' }, { v: '#e8c48a', n: 'Honey' },
 ]
 export const REAL_OUTFIT = [
-  { v: '#ffffff', n: 'Original' }, { v: '#6f9cff', n: 'Blue' }, { v: '#7ccfb6', n: 'Teal' }, { v: '#ff8f8f', n: 'Coral' }, { v: '#b9a6ff', n: 'Lavender' }, { v: '#4a4a4f', n: 'Graphite' },
+  { v: '#ffffff', n: 'Original' }, { v: '#a9c9b6', n: 'Sage' }, { v: '#a9bcff', n: 'Sky' }, { v: '#f4b3c2', n: 'Rose' },
+  { v: '#cdbdff', n: 'Lavender' }, { v: '#f6b08a', n: 'Apricot' }, { v: '#4a4a4f', n: 'Graphite' },
 ]
 
 const VIEW_OPT: Record<RealisticFraming, Record<string, number>> = {
@@ -179,10 +182,45 @@ function applyTints(scene: SceneNode | null, look: RealisticLook, groups: Groups
     const mats = Array.isArray(o.material) ? o.material : [o.material]
     for (const m of mats) {
       for (const [key, names] of Object.entries(groups) as [keyof Groups, string[]][]) {
-        if (m.name && names.includes(m.name)) m.color?.set(look[key])
+        if (!m.name || !names.includes(m.name)) continue
+        m.color?.set(look[key])
+        // Colours multiply the texture, so a printed outfit can't change hue. For a chosen outfit colour,
+        // drop the printed texture and show plain fabric in that colour; 'as modelled' brings it back.
+        if (key === 'outfit') {
+          if (!('origMap' in m.userData)) m.userData.origMap = m.map ?? null
+          const map = look.outfit === '#ffffff' ? m.userData.origMap : null
+          if (m.map !== map) { m.map = map; m.needsUpdate = true }
+          // flat fabric has no texture shading to tone it down, so match the brightness of real cloth
+          if (!map) m.color?.set(look.outfit).multiplyScalar(0.3)
+        }
       }
     }
   })
+}
+
+/** Soft studio backdrop in the character's colours: a lit centre falling off to the edges. */
+export const backdrop = ([a, b]: [string, string]) =>
+  `radial-gradient(110% 80% at 50% 28%, #ffffff 0%, ${a} 42%, ${b} 100%)`
+
+/** Round thumbnail: the portrait's face for photos, a monogram on the backdrop for 3D characters. */
+export function CharacterThumb({ id, size = 40, className }: { id: string; size?: number; className?: string }) {
+  const m = realisticModel(id)
+  const p = m.portrait
+  if (p) {
+    const ch = p.head.ry * 2.3 // crop: the face plus a little hair, as a fraction of the image height
+    return (
+      <span aria-hidden className={`relative block shrink-0 overflow-hidden rounded-full bg-slate-200 ring-1 ring-black/10 ${className ?? ''}`} style={{ width: size, height: size }}>
+        <img src={p.src} alt="" draggable={false} className="absolute max-w-none"
+          style={{ height: `${100 / ch}%`, top: `${(-(p.head.y - ch / 2) / ch) * 100}%`, left: '50%', transform: `translateX(-${p.head.x * 100}%)` }} />
+      </span>
+    )
+  }
+  return (
+    <span aria-hidden className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ring-1 ring-black/10 ${className ?? ''}`}
+      style={{ width: size, height: size, fontSize: size * 0.42, background: `linear-gradient(140deg, ${m.accent[0]}, ${m.accent[1]})`, textShadow: '0 1px 2px rgb(0 0 0 / 0.25)' }}>
+      {m.name[0]}
+    </span>
+  )
 }
 
 /** Remounts the renderer when the model changes (TalkingHead loads one model per instance). */
@@ -208,6 +246,7 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
   useEffect(() => {
     let cancelled = false
     let th: TalkingHeadT | null = null
+    let uninstall: (() => void) | undefined
     ;(async () => {
       try {
         const { TalkingHead } = await import('@met4citizen/talkinghead')
@@ -220,7 +259,10 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
           cameraRotateEnable: false, cameraPanEnable: false, cameraZoomEnable: false,
           avatarMood: lookRef.current.mood,
           avatarIdleEyeContact: 0.6, avatarSpeakingEyeContact: 0.8,
-          lightAmbientIntensity: 2.2, lightDirectIntensity: 25,
+          // studio portrait lighting: soft warm key, gentle fill, cool rim from behind
+          lightAmbientColor: 0xfff8f2, lightAmbientIntensity: 2.1,
+          lightDirectColor: 0xfff0e4, lightDirectIntensity: 26,
+          lightSpotColor: 0xc4dcff, lightSpotIntensity: 10, lightSpotPhi: 0.1, lightSpotTheta: 4, lightSpotDispersion: 1,
           modelFPS: 30,
           modelPixelRatio: Math.min(2, window.devicePixelRatio || 1), // crisp on high-DPI screens
         })
@@ -232,7 +274,7 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
         if (cancelled) { th.dispose(); return }
         applyTints(scene.current, lookRef.current, model.groups)
         head.current = th
-        installDriver(th, driver)
+        uninstall = installDriver(th, driver)
         setStatus('ready')
       } catch (err) {
         // Unmounted mid-load (e.g. the editor closed): dispose() already tore the renderer down, so a
@@ -244,6 +286,7 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
     })()
     return () => {
       cancelled = true
+      uninstall?.()
       head.current = null
       try { th?.dispose() } catch { /* already gone */ }
     }
@@ -257,17 +300,17 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
   useEffect(() => { if (status === 'ready' && head.current) frame(head.current, look.framing) }, [look.framing, status])
 
   return (
-    <div className={`relative ${className ?? ''}`} style={{ width, height }}>
+    <div className={`relative overflow-hidden ${className ?? ''}`} style={{ width, height, background: backdrop(model.accent) }}>
       <div ref={host} className="absolute inset-0 [&_canvas]:pointer-events-none" />
       {status === 'loading' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-brand-500" />
-          <span>{progress > 0 ? `${Math.round(progress * 100)}%` : 'Loading…'}</span>
+          <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/60 border-t-slate-700" />
+          <span className="font-medium text-slate-700/80">{progress > 0 ? `${Math.round(progress * 100)}%` : 'Loading…'}</span>
         </div>
       )}
       {status === 'error' && (
         <div className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-rose-600">
-          3D avatar could not load (WebGL needed). Pick another style in the editor.
+          3D avatar could not load (WebGL needed). Pick another character in the editor.
         </div>
       )}
     </div>
@@ -275,8 +318,14 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
 }
 
 /** Hooks lip-sync, gaze and gestures into TalkingHead's own animation loop. */
-function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }) {
-  if (!driver) return
+function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }): (() => void) | undefined {
+  if (!driver) return undefined
+  // Follow the cursor with eyes and head. TalkingHead eases each lookAt over ~750 ms, so only re-aim
+  // when the pointer has really moved, and not more than about twice a second.
+  const pointer = { x: 0, y: 0, moved: false }
+  let aimed = { x: -1e4, y: -1e4, at: 0 }
+  const onPointer = (e: PointerEvent) => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.moved = true }
+  window.addEventListener('pointermove', onPointer, { passive: true })
   let smooth = 0
   let shape: string = 'viseme_aa'
   let shapeLeft = 0
@@ -308,6 +357,15 @@ function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }) 
       lastReaction = reaction
     }
 
+    // ---- cursor following (not while thinking; while speaking she keeps eye contact)
+    const now = performance.now()
+    if (pointer.moved && state !== 'thinking' && state !== 'speaking' && now - aimed.at > 450
+      && Math.hypot(pointer.x - aimed.x, pointer.y - aimed.y) > 40) {
+      try { th.lookAt(pointer.x, pointer.y, 2600) } catch { /* not ready yet */ }
+      aimed = { x: pointer.x, y: pointer.y, at: now }
+      pointer.moved = false
+    }
+
     // ---- lip-sync from loudness
     const speaking = state === 'speaking'
     const raw = speaking ? Math.min(1, level()) : 0
@@ -332,4 +390,5 @@ function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }) 
       set(k, cur[k] < 0.005 ? 0 : cur[k])
     }
   }
+  return () => { window.removeEventListener('pointermove', onPointer); th.opt.update = null }
 }
