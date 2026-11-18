@@ -26,5 +26,10 @@
     "tailwindcss": "^4.3.5",
     "typescript": "~7.0.2",
     "vite": "^6.2.7"
+  },
+  "overrides": {
+    "vite": {
+      "rollup": "npm:@rollup/wasm-node@4.68.5"
+    }
   }
 }
