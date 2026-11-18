@@ -7,7 +7,9 @@
  *  - Head pose: vertices inside the head (fading out over the hair and neck) rotate about a pivot in the
  *    neck, and the surface shading follows the rotated normals, so light moves across the face.
  *  - The camera orbits a little and the chest breathes, so the face shows parallax against the backdrop.
- *  - The head follows the pointer while idle or listening; it nods, tilts and looks away per state.
+ *  - Eyes and head follow the pointer: the eyes jump there in quick saccades, the head follows on damped
+ *    springs (slight overshoot) while the eyes counter-rotate. Idle glances, micro-motion, emphasis nods
+ *    while speaking and small nods while listening keep it alive.
  *  - Mouth: the fragment shader opens the lips with the agent's voice (lower lip and chin pushed down,
  *    upper lip lifted, lens-shaped dark interior with a soft hint of teeth).
  *  - Blinks: the upper eyelid skin is stretched down over the eye for about 150 ms every few seconds.
@@ -134,6 +136,7 @@ uniform vec3 uMouth;
 uniform float uHalfW;
 uniform float uOpen;
 uniform float uBlink;
+uniform vec2 uGaze;   // eye-in-head direction, -1..1 (x right, y down)
 out vec4 outColor;
 
 // stretch the upper-eyelid skin down over the eye
@@ -148,9 +151,17 @@ float blinkY(vec2 p, vec4 e) {
   return top + (p.y - top) * (open - top) / (L - top);
 }
 
+// move the iris inside the eye opening (the eye corners stay put)
+vec2 gazeShift(vec2 p, vec4 e) {
+  vec2 d = (p - e.xy) / vec2(e.z, e.w * 1.15);
+  float m = 1.0 - smoothstep(0.5, 1.0, length(d));
+  return vec2(uGaze.x * e.z * 0.26, uGaze.y * e.w * 0.32) * m;
+}
+
 void main() {
   vec2 p = vUV * uImg;
-  vec2 s = vec2(p.x, blinkY(vec2(p.x, blinkY(p, uEyeL)), uEyeR));
+  vec2 g = p - gazeShift(p, uEyeL) - gazeShift(p, uEyeR);
+  vec2 s = vec2(g.x, blinkY(vec2(g.x, blinkY(g, uEyeL)), uEyeR));
   vec3 inner = vec3(0.0);
   float ia = 0.0;
   float cx = uMouth.x, cy = uMouth.y, hw = uHalfW;
@@ -214,6 +225,16 @@ function rotation(yaw: number, pitch: number, roll: number) {
     [-sy * m[0][0] + cy * m[2][0], -sy * m[0][1] + cy * m[2][1], -sy * m[0][2] + cy * m[2][2]],
   ]
   return [r[0][0], r[1][0], r[2][0], r[0][1], r[1][1], r[2][1], r[0][2], r[1][2], r[2][2]]
+}
+
+/** damped spring (value x, velocity v); stiffness k, damping c */
+const spring = () => ({ x: 0, v: 0 })
+function step(sp: { x: number; v: number }, target: number, dt: number, k: number, c: number) {
+  for (let i = 0; i < 2; i++) { // two half-steps keep it stable at low frame rates
+    const h = dt / 2
+    sp.v += ((target - sp.x) * k - sp.v * c) * h
+    sp.x += sp.v * h
+  }
 }
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string) {
@@ -312,18 +333,23 @@ export default function PhotoAvatar({ spec, framing, width, height, driver, clas
       // pivot: inside the neck, a little behind the face
       const pivotPx = { x: headPx.x, y: chin + (shoulder - chin) * 0.3, z: -headPx.rx * 0.2 }
       gl.uniform3f(U('uPivot'), (pivotPx.x - W / 2) / H, (H / 2 - pivotPx.y) / H, pivotPx.z / H)
-      const uRot = U('uRot'), uViewProj = U('uViewProj'), uBreath = U('uBreath'), uOpen = U('uOpen'), uBlink = U('uBlink')
+      const uRot = U('uRot'), uViewProj = U('uViewProj'), uBreath = U('uBreath'), uOpen = U('uOpen'), uBlink = U('uBlink'), uGaze = U('uGaze')
       gl.enable(gl.DEPTH_TEST)
       gl.viewport(0, 0, cv.width, cv.height)
 
       // animated state
-      const cur = { open: 0, yaw: 0, pitch: 0, roll: 0, frameX: 0, frameY: 0, frameH: 0 }
+      const cur = { open: 0, frameX: 0, frameY: 0, frameH: 0 }
       let smooth = 0, syllable = 0, syllableLeft = 0
       let last = performance.now()
       let goodbyeAt = -1
       let lastReaction: RealisticDriver['reaction'] = null
       let nextBlink = last + 1500, blinkStart = -1
-      let wanderAt = 0, wanderYaw = 0, wanderPitch = 0
+      // head: damped springs (degrees), a little overshoot like a real neck
+      const head = { yaw: spring(), pitch: spring(), roll: spring() }
+      // gaze (degrees, where the eyes point in the world): moves in quick saccades between fixations
+      const gaze = { x: 0, y: 0, tx: 0, ty: 0, holdUntil: 0 }
+      let idleGazeAt = 0, idleX = 0, idleY = 0
+      let lastSmooth = 0, nodAt = last + 3000, emphAt = 0
 
       const draw = (now: number) => {
         raf = requestAnimationFrame(draw)
@@ -349,18 +375,50 @@ export default function PhotoAvatar({ spec, framing, width, height, driver, clas
           if (k >= 1) { blinkStart = -1; nextBlink = now + 2200 + Math.random() * 3800 } else blink = Math.sin(k * Math.PI)
         }
 
-        // head pose per state (degrees)
+        // ---- where to look (gaze target, degrees): cursor, camera, or idle glances
         if (d?.reaction !== lastReaction) { if (d?.reaction === 'goodbye') goodbyeAt = t; lastReaction = d?.reaction ?? null }
-        if (now > wanderAt) { wanderYaw = (Math.random() - 0.5) * 5; wanderPitch = (Math.random() - 0.5) * 3; wanderAt = now + 2500 + Math.random() * 3000 }
-        const follow = now - pointer.at < 4000 && (state === null || state === 'idle' || state === 'listening')
-        let yaw = wanderYaw + Math.sin(t * 0.37) * 1.5, pitch = wanderPitch + Math.sin(t * 0.5) * 1, roll = Math.sin(t * 0.6) * 0.8
-        if (follow) { yaw = pointer.x * 9; pitch = pointer.y * 6 }
-        if (state === 'listening') { roll += 3; pitch += 2 }
-        else if (state === 'thinking') { yaw = -7; pitch = -5; roll = -2 }
-        else if (speaking) { yaw = Math.sin(t * 0.9) * 4; pitch = Math.sin(t * 2.1) * 2.5 * smooth + Math.sin(t * 0.6); roll = Math.sin(t * 1.3) * 1.5 }
+        const pointerFresh = now - pointer.at < 5000
+        if (now > idleGazeAt) {
+          // idle glances: mostly near the viewer, sometimes a little further away
+          const far = Math.random() < 0.25
+          idleX = (Math.random() - 0.5) * (far ? 26 : 8); idleY = (Math.random() - 0.5) * (far ? 12 : 5)
+          idleGazeAt = now + 900 + Math.random() * 2600
+        }
+        let tx = idleX, ty = idleY
+        if (state === 'thinking') { tx = -16; ty = -10 }
+        else if (pointerFresh) {
+          tx = pointer.x * 20; ty = pointer.y * 13
+          if (speaking) { tx *= 0.35; ty *= 0.35 } // mostly keeps eye contact while talking
+        } else if (speaking || state === 'listening') { tx = idleX * 0.3; ty = idleY * 0.3 }
+        // saccade: jump only when the target moved enough or the fixation ran out
+        if (now >= gaze.holdUntil && Math.hypot(tx - gaze.tx, ty - gaze.ty) > 1.2) {
+          gaze.tx = tx; gaze.ty = ty; gaze.holdUntil = now + 120 + Math.random() * 180
+        }
+        const ks = Math.min(1, dt / 28)
+        gaze.x += (gaze.tx - gaze.x) * ks; gaze.y += (gaze.ty - gaze.y) * ks
+
+        // ---- head follows the gaze part of the way, on springs
+        let yaw = gaze.tx * 0.5, pitch = gaze.ty * 0.45, roll = -gaze.tx * 0.08
+        // tiny constant motion: no one holds their head perfectly still
+        yaw += Math.sin(t * 0.83) * 0.5 + Math.sin(t * 1.91 + 1) * 0.25
+        pitch += Math.sin(t * 0.67 + 2) * 0.4 + Math.sin(t * 1.6) * 0.35 // breathing lifts the chin a touch
+        roll += Math.sin(t * 0.51 + 4) * 0.7
+        if (state === 'listening') { roll += 3.5; pitch += 1.5 }
+        else if (state === 'thinking') roll -= 2.5
+        else if (speaking) { yaw += Math.sin(t * 0.7) * 2.5; roll += Math.sin(t * 1.1) * 1.4 }
+        // speech emphasis: a small nod when the voice gets louder quickly
+        if (speaking && now > emphAt && smooth - lastSmooth > 0.08 && smooth > 0.3) {
+          head.pitch.v += Math.min(18, 120 * (smooth - lastSmooth)); emphAt = now + 600 + Math.random() * 900
+        }
+        lastSmooth = smooth
+        // listening: an occasional small "mm-hm" nod
+        if (state === 'listening' && now > nodAt) { head.pitch.v += 16; nodAt = now + 2500 + Math.random() * 3500 }
         if (goodbyeAt >= 0 && t - goodbyeAt < 1.4) pitch += Math.sin((t - goodbyeAt) * Math.PI * 2 / 0.7) * 7
-        const k = Math.min(1, dt / 220)
-        cur.yaw = lerp(cur.yaw, yaw * m, k); cur.pitch = lerp(cur.pitch, pitch * m, Math.min(1, dt / 120)); cur.roll = lerp(cur.roll, roll * m, k)
+        const sec = dt / 1000
+        step(head.yaw, yaw * m, sec, 38, 8.5); step(head.pitch, pitch * m, sec, 45, 9); step(head.roll, roll * m, sec, 30, 8)
+        // eyes in the head = where she looks minus where her head points (they counter-rotate as it turns)
+        const eyeX = clamp((gaze.x - head.yaw.x) / 18, -1, 1) * m
+        const eyeY = clamp((gaze.y - head.pitch.x) / 14, -1, 1) * m
 
         // framing → camera
         const f = spec.frames[framingRef.current]
@@ -374,17 +432,18 @@ export default function PhotoAvatar({ spec, framing, width, height, driver, clas
         const cyw = 0.5 - clamp(cur.frameY, vh / 2, 1 - vh / 2)
         const zoom = 1.07 // headroom so motion never shows the photo's edges
         const dist = (vh / zoom / 2) / Math.tan(FOV / 2)
-        const oy = (Math.sin(t * 0.23) * 1.6 + cur.yaw * 0.25) * DEG * m
-        const ox = (Math.sin(t * 0.31) * 0.8 - cur.pitch * 0.15) * DEG * m
+        const oy = (Math.sin(t * 0.23) * 1.2 + head.yaw.x * 0.22) * DEG * m
+        const ox = (Math.sin(t * 0.31) * 0.6 - head.pitch.x * 0.12) * DEG * m
         const target = [cxw, cyw, 0]
         const eye = [cxw + dist * Math.sin(oy) * Math.cos(ox), cyw + dist * Math.sin(ox), dist * Math.cos(oy) * Math.cos(ox)]
         const vp = mul4(perspective(FOV, aspect, dist * 0.5, dist * 2), lookAt(eye, target, [0, 1, 0]))
 
         gl.uniformMatrix4fv(uViewProj, false, vp)
-        gl.uniformMatrix3fv(uRot, false, rotation(cur.yaw * DEG, cur.pitch * DEG, -cur.roll * DEG))
+        gl.uniformMatrix3fv(uRot, false, rotation(head.yaw.x * DEG, head.pitch.x * DEG, -head.roll.x * DEG))
         gl.uniform1f(uBreath, Math.sin(t * 1.6) * 0.0022 * m)
         gl.uniform1f(uOpen, cur.open)
         gl.uniform1f(uBlink, blink)
+        gl.uniform2f(uGaze, eyeX, eyeY)
         gl.clearColor(0.85, 0.86, 0.88, 1)
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
         gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_INT, 0)

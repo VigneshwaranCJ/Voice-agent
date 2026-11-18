@@ -3,6 +3,8 @@
  *
  * - A portrait tile with a ring that shows the call state (listening, thinking, speaking, muted) and
  *   pulses with the voice, plus a name tag. Each character has its own accent colours.
+ * - The tile tilts toward the cursor in 3D, floats gently while idle and swings when dragged; the
+ *   character inside follows the cursor with her eyes and head.
  * - Tap / Enter starts a call (replaces the "Start" button); during a call, tap toggles mute.
  * - Drag it anywhere (or focus it and use the arrow keys); position is remembered.
  * - Pick a character (3D photo portrait or 3D model), name, colours and size in the editor; saved per agent.
@@ -213,22 +215,58 @@ export default function TalkingCharacter(props: Props) {
   const realLook = { ...DEFAULT_REALISTIC, ...(look.realistic ?? {}) }
 
   // ---- voice-reactive ring: agent loudness while speaking, the caller's while listening ----------
+  // ---- body motion: the card tilts toward the cursor in 3D, floats gently, and swings with momentum
+  //      when dragged (all on damped springs)
   const tileRef = useRef<HTMLDivElement>(null)
+  const motionRef = useRef<HTMLDivElement>(null)
   const phaseRef = useRef(phase)
   phaseRef.current = phase
+  const posRef = useRef(pos)
+  posRef.current = pos
   useEffect(() => {
     let raf = 0
     let v = 0
-    const tick = () => {
+    let last = performance.now()
+    const pointer = { x: -1, y: -1, at: -1e9 }
+    const onPointer = (e: PointerEvent) => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.at = performance.now() }
+    window.addEventListener('pointermove', onPointer, { passive: true })
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    const sp = { rx: 0, vrx: 0, ry: 0, vry: 0, rz: 0, vrz: 0 }
+    let prevX = posRef.current.x
+    const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
+      const dt = Math.min(0.05, (now - last) / 1000); last = now
       const p = phaseRef.current
       const l = levelsRef.current()
       const target = p === 'speaking' ? Math.min(1, l.agent * 1.6) : p === 'listening' ? Math.min(1, l.mic * 3) : 0
       v += (target - v) * (target > v ? 0.35 : 0.12)
       tileRef.current?.style.setProperty('--lvl', v < 0.005 ? '0' : v.toFixed(3))
+
+      const el = motionRef.current
+      if (!el || reduce) return
+      // tilt toward the cursor (strongest when it is near), relax when it has been still a while
+      const r = el.getBoundingClientRect()
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+      const fresh = now - pointer.at < 3000
+      const dx = fresh ? (pointer.x - cx) / Math.max(240, window.innerWidth * 0.35) : 0
+      const dy = fresh ? (pointer.y - cy) / Math.max(240, window.innerHeight * 0.35) : 0
+      const near = 1 / (1 + Math.hypot(dx, dy))
+      const tRy = Math.max(-1, Math.min(1, dx)) * 9 * near
+      const tRx = -Math.max(-1, Math.min(1, dy)) * 7 * near
+      // momentum swing while dragging: lean against the direction of travel
+      const vx = (posRef.current.x - prevX) / Math.max(dt, 0.001); prevX = posRef.current.x
+      const tRz = Math.max(-14, Math.min(14, -vx * 0.012))
+      const k = 120, c = 14
+      sp.vrx += ((tRx - sp.rx) * k - sp.vrx * c) * dt; sp.rx += sp.vrx * dt
+      sp.vry += ((tRy - sp.ry) * k - sp.vry * c) * dt; sp.ry += sp.vry * dt
+      sp.vrz += ((tRz - sp.rz) * 90 - sp.vrz * 9) * dt; sp.rz += sp.vrz * dt
+      // a gentle float when no one is talking
+      const t = now / 1000
+      const bob = p === 'idle' ? Math.sin(t * 1.3) * 4 : Math.sin(t * 1.3) * 1.5
+      el.style.transform = `perspective(800px) translateY(${bob.toFixed(2)}px) rotateX(${sp.rx.toFixed(2)}deg) rotateY(${sp.ry.toFixed(2)}deg) rotateZ(${sp.rz.toFixed(2)}deg)`
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('pointermove', onPointer) }
   }, [])
 
   // Edits build on the latest look we sent up, so two quick clicks before the parent re-renders
@@ -296,7 +334,9 @@ export default function TalkingCharacter(props: Props) {
         onContextMenu={(e) => { e.preventDefault(); setEditing(true) }}
         onKeyDown={onKeyDown}
       >
-        <AvatarTile look={realLook} name={look.name} phase={phase} driver={realDriver} width={tileW} height={tileH} levelRef={tileRef} />
+        <div ref={motionRef} className="will-change-transform" style={{ transformStyle: 'preserve-3d' }}>
+          <AvatarTile look={realLook} name={look.name} phase={phase} driver={realDriver} width={tileW} height={tileH} levelRef={tileRef} />
+        </div>
       </div>
 
       {/* glass toolbar */}

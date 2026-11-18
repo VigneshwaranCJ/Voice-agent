@@ -246,6 +246,7 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
   useEffect(() => {
     let cancelled = false
     let th: TalkingHeadT | null = null
+    let uninstall: (() => void) | undefined
     ;(async () => {
       try {
         const { TalkingHead } = await import('@met4citizen/talkinghead')
@@ -273,7 +274,7 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
         if (cancelled) { th.dispose(); return }
         applyTints(scene.current, lookRef.current, model.groups)
         head.current = th
-        installDriver(th, driver)
+        uninstall = installDriver(th, driver)
         setStatus('ready')
       } catch (err) {
         // Unmounted mid-load (e.g. the editor closed): dispose() already tore the renderer down, so a
@@ -285,6 +286,7 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
     })()
     return () => {
       cancelled = true
+      uninstall?.()
       head.current = null
       try { th?.dispose() } catch { /* already gone */ }
     }
@@ -316,8 +318,14 @@ function RealisticAvatarInner({ look, width, height, driver, className }: Props)
 }
 
 /** Hooks lip-sync, gaze and gestures into TalkingHead's own animation loop. */
-function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }) {
-  if (!driver) return
+function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }): (() => void) | undefined {
+  if (!driver) return undefined
+  // Follow the cursor with eyes and head. TalkingHead eases each lookAt over ~750 ms, so only re-aim
+  // when the pointer has really moved, and not more than about twice a second.
+  const pointer = { x: 0, y: 0, moved: false }
+  let aimed = { x: -1e4, y: -1e4, at: 0 }
+  const onPointer = (e: PointerEvent) => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.moved = true }
+  window.addEventListener('pointermove', onPointer, { passive: true })
   let smooth = 0
   let shape: string = 'viseme_aa'
   let shapeLeft = 0
@@ -349,6 +357,15 @@ function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }) 
       lastReaction = reaction
     }
 
+    // ---- cursor following (not while thinking; while speaking she keeps eye contact)
+    const now = performance.now()
+    if (pointer.moved && state !== 'thinking' && state !== 'speaking' && now - aimed.at > 450
+      && Math.hypot(pointer.x - aimed.x, pointer.y - aimed.y) > 40) {
+      try { th.lookAt(pointer.x, pointer.y, 2600) } catch { /* not ready yet */ }
+      aimed = { x: pointer.x, y: pointer.y, at: now }
+      pointer.moved = false
+    }
+
     // ---- lip-sync from loudness
     const speaking = state === 'speaking'
     const raw = speaking ? Math.min(1, level()) : 0
@@ -373,4 +390,5 @@ function installDriver(th: TalkingHeadT, driver?: { current: RealisticDriver }) 
       set(k, cur[k] < 0.005 ? 0 : cur[k])
     }
   }
+  return () => { window.removeEventListener('pointermove', onPointer); th.opt.update = null }
 }
