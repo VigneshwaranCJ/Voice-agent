@@ -53,7 +53,18 @@ def voice_env(monkeypatch):
             await asyncio.sleep(0.05)
             yield b"\xff\xf3mp3"
 
+    async def fake_tts_live(texts, voice, **kw):
+        parts = []
+        while (t := await texts.get()) is not None:
+            parts.append(t)
+        if not parts:
+            return
+        lang, speaker = voice()
+        async for chunk in fake_tts(" ".join(parts), language_code=lang, speaker=speaker):
+            yield chunk
+
     monkeypatch.setattr(vs, "stream_tts", fake_tts)
+    monkeypatch.setattr(vs, "stream_tts_live", fake_tts_live)
     return spoken
 
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,9 +13,11 @@ from app.context.state import ConversationState, get_state_store
 from app.core.config import get_settings
 from app.core.logging import log
 from app.industries.registry import get_industry
+from app.llm.base import LLMResponse
 from app.llm.sarvam import get_llm
 from app.models import AnalyticsEvent, ConversationMessage
 from app.orchestration.guardrails import FALLBACK_REPLY, UNRESOLVED_REPLY, human_request_guard, pick
+from app.orchestration.speech_stream import SentenceStream
 from app.sarvam.client import SarvamError
 from app.tools.common import create_escalation
 from app.tools.registry import ToolContext, execute_tool, tools_for
@@ -33,6 +36,7 @@ class TurnResult:
     events: list[dict] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
     escalated: bool = False
+    streamed: bool = False  # the reply was already delivered sentence by sentence through `on_text`
 
 
 def greeting_for(bundle: AgentBundle, lang: str) -> str:
@@ -77,7 +81,10 @@ class AgentEngine:
         await self.db.commit()
         await get_state_store().put(state)
 
-    async def handle_turn(self, state: ConversationState, user_text: str, detected_language: str | None = None) -> TurnResult:
+    async def handle_turn(self, state: ConversationState, user_text: str, detected_language: str | None = None,
+                          on_text: Callable[[str], Awaitable[None]] | None = None) -> TurnResult:
+        """One caller turn. With `on_text` (voice), the reply is streamed out sentence by sentence as the LLM writes
+        it, so speech starts early; `result.streamed` then says it was already delivered."""
         # Typed text has no STT language; infer from script. Romanised Tamil (Tanglish) keeps the current language.
         if detected_language is None:
             hint = detect_script_language(user_text)
@@ -93,7 +100,7 @@ class AgentEngine:
 
         result = await self._guarded(state, user_text, tool_ctx)
         if result is None:
-            result = await self._llm_turn(state, user_text, tool_ctx)
+            result = await self._llm_turn(state, user_text, tool_ctx, on_text)
 
         state.history.append({"role": "assistant", "content": result.reply})
         state.history = _trim(state.history, self.settings.history_max_messages)
@@ -119,7 +126,36 @@ class AgentEngine:
             return TurnResult(reply=pick(g.reply, state.language), language=state.language)
         return None
 
-    async def _llm_turn(self, state: ConversationState, user_text: str, tool_ctx: ToolContext) -> TurnResult:
+    async def _ask(self, messages: list[dict], tools: list[dict] | None, opts: dict, speech: SentenceStream | None) -> LLMResponse:
+        """One LLM round. Streams text into `speech` when given; falls back to a plain request if streaming fails
+        before anything was spoken."""
+        if speech is None or not self.settings.llm_streaming or not hasattr(self.llm, "stream"):
+            return await asyncio.wait_for(self.llm.complete(messages, tools=tools, **opts), timeout=self.settings.llm_timeout_seconds)
+        spoken_before = len(speech.parts)
+
+        async def run() -> LLMResponse:
+            final: LLMResponse | None = None
+            async for item in self.llm.stream(messages, tools=tools, **opts):
+                if isinstance(item, LLMResponse):
+                    final = item
+                else:
+                    await speech.feed(item)
+            await speech.flush()
+            if final is None:
+                raise ValueError("stream ended without a response")
+            return final
+
+        try:
+            return await asyncio.wait_for(run(), timeout=self.settings.llm_timeout_seconds)
+        except Exception as e:
+            if len(speech.parts) > spoken_before or isinstance(e, SarvamError) and e.status in (401, 402, 403):
+                raise
+            log.info("llm_stream_fallback", error=str(e)[:200])
+            speech.buf = ""
+            return await asyncio.wait_for(self.llm.complete(messages, tools=tools, **opts), timeout=self.settings.llm_timeout_seconds)
+
+    async def _llm_turn(self, state: ConversationState, user_text: str, tool_ctx: ToolContext,
+                        on_text: Callable[[str], Awaitable[None]] | None = None) -> TurnResult:
         system = await self.ctx_mgr.system_prompt(state, user_text)
         history = [dict(m) for m in _trim(state.history, self.settings.history_max_messages)]
         if history and history[-1].get("role") == "user":
@@ -130,15 +166,22 @@ class AgentEngine:
         tools = [t.openai_schema() for t in tools_for(self.enabled_tools)]
         executed: list[dict] = []
         opts = dict(self.bundle.config.llm_settings or {})
+        speech = SentenceStream(on_text) if on_text else None
+
+        def done(reply: str) -> TurnResult:
+            # When streamed, the reply is exactly what the caller heard (including any words before a tool call).
+            if speech and speech.used:
+                return TurnResult(reply=speech.text, language=state.language, tool_calls=executed, streamed=True)
+            return TurnResult(reply=reply, language=state.language, tool_calls=executed)
+
         try:
             for _ in range(self.settings.max_tool_rounds):
-                resp = await asyncio.wait_for(self.llm.complete(messages, tools=tools or None, **opts),
-                                              timeout=self.settings.llm_timeout_seconds)
+                resp = await self._ask(messages, tools or None, opts, speech)
                 if not resp.tool_calls:
                     if not resp.content:
                         raise ValueError("empty LLM response")
                     state.consecutive_failures = 0
-                    return TurnResult(reply=resp.content, language=state.language, tool_calls=executed)
+                    return done(resp.content)
                 messages.append(resp.assistant_message())
                 for call in resp.tool_calls:
                     out = await execute_tool(tool_ctx, call.name, call.arguments, self.enabled_tools)
@@ -149,10 +192,9 @@ class AgentEngine:
                                      "content": json.dumps(out, ensure_ascii=False, default=str)})
             # Tool budget exhausted: force a spoken answer. Sarvam requires `tools` whenever tool messages
             # are present, so keep them and disable calling via tool_choice="none".
-            resp = await asyncio.wait_for(self.llm.complete(messages, tools=tools or None, **{**opts, "tool_choice": "none"}),
-                                          timeout=self.settings.llm_timeout_seconds)
+            resp = await self._ask(messages, tools or None, {**opts, "tool_choice": "none"}, speech)
             if resp.content:
-                return TurnResult(reply=resp.content, language=state.language, tool_calls=executed)
+                return done(resp.content)
             raise ValueError("no final answer")
         except Exception as e:
             log.warning("llm_turn_failed", error=str(e), error_type=type(e).__name__, conversation=state.conversation_id)
@@ -161,5 +203,9 @@ class AgentEngine:
             state.consecutive_failures += 1
             if state.consecutive_failures >= 2 and not state.escalated:
                 await create_escalation(tool_ctx, "unresolved", f"Assistant failed repeatedly. Last caller message: {user_text[:300]}")
-                return TurnResult(reply=pick(UNRESOLVED_REPLY, state.language), language=state.language, tool_calls=executed)
-            return TurnResult(reply=pick(FALLBACK_REPLY, state.language), language=state.language, tool_calls=executed)
+                fallback = pick(UNRESOLVED_REPLY, state.language)
+            else:
+                fallback = pick(FALLBACK_REPLY, state.language)
+            if speech and speech.used:  # part of an answer was already spoken: continue with the apology
+                await speech.say(fallback)
+            return done(fallback)

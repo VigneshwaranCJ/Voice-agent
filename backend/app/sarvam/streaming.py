@@ -114,3 +114,72 @@ async def stream_tts(text: str, *, language_code: str, speaker: str, model: str 
             elif t == "error":
                 d = msg.get("data", {})
                 raise SarvamError(d.get("message", "TTS error"), code=str(d.get("code")))
+
+
+async def stream_tts_live(texts: "asyncio.Queue[str | None]", voice: Callable[[], tuple[str, str]], *,
+                          model: str | None = None, pace: float = 1.0, temperature: float = 0.6,
+                          sample_rate: int = 24000) -> AsyncIterator[bytes]:
+    """Yield MP3 chunks while text is still arriving.
+
+    The socket is opened at once (overlapping the LLM's thinking time), but the voice config is sent only when the
+    first text arrives: `voice()` then returns the (language_code, speaker) for this turn, which may have changed
+    if the caller switched language. Put text pieces on `texts`, then None to finish. Cancel the consumer to stop.
+    """
+    s = get_settings()
+    model = model or s.sarvam_tts_model
+    url = f"{s.sarvam_ws_base_url}/text-to-speech/ws?{urlencode({'model': model, 'send_completion_event': 'true'})}"
+
+    async def configure(ws: ClientConnection, language_code: str, speaker: str) -> None:
+        await ws.send(json.dumps({"type": "config", "data": {
+            "model": model, "language_code": language_code, "speaker": speaker, "pace": pace,
+            "temperature": temperature, "speech_sample_rate": str(sample_rate),
+            "output_audio_codec": "mp3", "output_audio_bitrate": "64k",
+            "min_buffer_size": 30, "max_chunk_length": 200,
+        }}))
+
+    async with websockets.connect(url, additional_headers={"api-subscription-key": _key()},
+                                  max_size=2**23, open_timeout=10) as ws:
+        first = await texts.get()
+        if first is None:  # nothing to say
+            return
+        try:
+            await configure(ws, *voice())
+        except websockets.ConnectionClosed:
+            # The idle socket was closed while the LLM was thinking (e.g. a long tool call): speak this turn on a
+            # fresh connection instead.
+            async for chunk in _speak_rest(first, texts, voice, model=model, pace=pace, temperature=temperature,
+                                           sample_rate=sample_rate):
+                yield chunk
+            return
+
+        async def pump() -> None:
+            await ws.send(json.dumps({"type": "text", "data": {"text": first}}))
+            while (t := await texts.get()) is not None:
+                await ws.send(json.dumps({"type": "text", "data": {"text": t}}))
+            await ws.send(json.dumps({"type": "flush"}))
+
+        sender = asyncio.create_task(pump())
+        try:
+            async for raw in ws:
+                msg = json.loads(raw)
+                t = msg.get("type")
+                if t == "audio":
+                    yield base64.b64decode(msg["data"]["audio"])
+                elif t == "event" and msg.get("data", {}).get("event_type") == "final":
+                    if sender.done():  # final for the flushed (complete) text
+                        return
+                elif t == "error":
+                    d = msg.get("data", {})
+                    raise SarvamError(d.get("message", "TTS error"), code=str(d.get("code")))
+        finally:
+            sender.cancel()
+
+
+async def _speak_rest(first: str, texts: "asyncio.Queue[str | None]", voice: Callable[[], tuple[str, str]],
+                      **kw) -> AsyncIterator[bytes]:
+    rest = [first]
+    while (t := await texts.get()) is not None:
+        rest.append(t)
+    language_code, speaker = voice()
+    async for chunk in stream_tts(" ".join(rest), language_code=language_code, speaker=speaker, **kw):
+        yield chunk

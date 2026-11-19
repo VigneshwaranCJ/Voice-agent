@@ -24,7 +24,7 @@ from app.models import ConversationMessage
 from app.orchestration.engine import AgentEngine, greeting_for
 from app.orchestration.lifecycle import end_conversation, log_call_event, start_conversation
 from app.sarvam.client import SarvamError
-from app.sarvam.streaming import RealtimeSTT, stream_tts
+from app.sarvam.streaming import RealtimeSTT, stream_tts, stream_tts_live
 from app.voice.voices import speaker_for
 
 STT_LANG_MAP = {"or-IN": "od-IN"}  # realtime STT uses or-IN, TTS uses od-IN
@@ -192,14 +192,20 @@ class VoiceSession:
                 text, lang = f"{text} {more}", lang2 or lang
             await self._state("thinking")
             self._busy = True
+            # Open the speech connection now, so its setup overlaps the LLM's thinking time; sentences are
+            # spoken as the LLM writes them.
+            speech = await self._start_speech()
             try:
                 async with self._db_lock:
                     prev_lang = self.state.language
-                    result = await self.engine.handle_turn(self.state, text, lang)
+                    result = await self.engine.handle_turn(self.state, text, lang,
+                                                           on_text=speech.push if speech else None)
                     if result.language != prev_lang:
                         await log_call_event(self.db, self.call, "language_switch", **{"from": prev_lang, "to": result.language})
             except Exception as e:
                 log.exception("turn_failed")
+                if speech:
+                    await speech.finish()
                 await self._error(f"Something went wrong: {type(e).__name__}")
                 await self._state("listening")
                 continue
@@ -209,7 +215,47 @@ class VoiceSession:
                 await self.transport.send_json(ev)
                 async with self._db_lock:
                     await log_call_event(self.db, self.call, ev["type"], **{k: v for k, v in ev.items() if k != "type"})
-            await self._speak(result.reply)
+            if speech is None:
+                await self._speak(result.reply)
+                continue
+            if not result.streamed:  # guardrail / fallback replies arrive whole
+                await speech.push(result.reply)
+            await speech.finish()
+            await self.transport.send_json({"type": "agent_text", "text": result.reply, "language": self.state.language,
+                                            "utterance_id": speech.uid})
+
+    async def _start_speech(self) -> "_LiveSpeech | None":
+        if not get_settings().sarvam_configured:
+            return None
+        await self._cancel_speech(notify=False)
+        speech = _LiveSpeech(self)
+        self.current_utterance = speech.uid
+        self.speak_task = asyncio.create_task(self._tts_live(speech))
+        return speech
+
+    async def _tts_live(self, speech: "_LiveSpeech") -> None:
+        vp = self.bundle.agent.voice_profile
+
+        def voice() -> tuple[str, str]:  # read when the first sentence is ready: the turn's language is known then
+            lang = self.state.language
+            return lang, speaker_for(vp.speakers if vp else None, lang)
+
+        try:
+            async for chunk in stream_tts_live(speech.queue, voice, model=vp.tts_model if vp else None,
+                                               pace=vp.pace if vp else 1.0, temperature=vp.temperature if vp else 0.6,
+                                               sample_rate=vp.sample_rate if vp else 24000):
+                await self.transport.send_json({"type": "audio", "utterance_id": speech.uid, "format": "mp3",
+                                                "data": base64.b64encode(chunk).decode()})
+            await self.transport.send_json({"type": "audio_end", "utterance_id": speech.uid})
+        except asyncio.CancelledError:
+            raise
+        except (SarvamError, Exception) as e:
+            log.warning("tts_failed", error=str(e))
+            self.agent_speaking = False
+            async with self._db_lock:
+                await log_call_event(self.db, self.call, "tts_error", message=str(e)[:300])
+            await self._error(f"Voice playback failed ({str(e)[:160]}); showing text instead.")
+            await self._state("listening")
 
     async def _speak(self, text: str) -> None:
         await self._cancel_speech(notify=False)
@@ -311,3 +357,28 @@ class VoiceSession:
 
     async def _error(self, message: str) -> None:
         await self.transport.send_json({"type": "error", "message": message})
+
+
+class _LiveSpeech:
+    """One agent utterance being spoken while the LLM is still writing it."""
+
+    def __init__(self, session: "VoiceSession"):
+        self.session = session
+        self.uid = uuid.uuid4().hex[:12]
+        self.queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self.started = False
+        self.finished = False
+
+    async def push(self, text: str) -> None:
+        if self.finished or self.session.current_utterance != self.uid:
+            return  # interrupted (barge-in) or superseded: drop the rest
+        if not self.started:
+            self.started = True
+            self.session.agent_speaking = True
+            await self.session._state("speaking")
+        await self.queue.put(text)
+
+    async def finish(self) -> None:
+        if not self.finished:
+            self.finished = True
+            await self.queue.put(None)

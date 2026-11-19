@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     encryption_key: str | None = None  # Fernet key; required outside development
     rate_limit_per_minute: int = 120
 
+    # Email alerts (new leads, escalations) to each business's admins. Off until SMTP_HOST and SMTP_FROM are set.
+    # Works with any SMTP provider, e.g. Zoho Mail: smtp.zoho.in, port 587, starttls, an app password.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_security: str = "starttls"  # starttls | ssl | none
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    # Public dashboard URL used for links in emails, e.g. https://kuralai.com
+    public_base_url: str | None = None
+
     # Sarvam AI
     sarvam_api_key: str | None = None
     sarvam_base_url: str = "https://api.sarvam.ai"
@@ -39,6 +50,8 @@ class Settings(BaseSettings):
 
     # Engine limits
     llm_timeout_seconds: float = 20.0
+    # Voice: stream the LLM reply into speech sentence by sentence (set false to wait for the full reply).
+    llm_streaming: bool = True
     tool_timeout_seconds: float = 8.0
     max_tool_rounds: int = 4
     history_max_messages: int = 20
@@ -78,6 +91,10 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from)
 
     @property
     def sarvam_configured(self) -> bool:

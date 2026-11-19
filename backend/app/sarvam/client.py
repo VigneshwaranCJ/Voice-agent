@@ -1,6 +1,8 @@
 """Sarvam AI REST client (STT, TTS, chat completions). Docs: https://docs.sarvam.ai"""
 
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -94,6 +96,40 @@ class SarvamClient:
             body["tools"] = tools
             body["tool_choice"] = tool_choice
         return await self._request("POST", "/v1/chat/completions", json=body, timeout=s.llm_timeout_seconds)
+
+    async def chat_stream(self, messages: list[dict], *, tools: list[dict] | None = None, model: str | None = None,
+                          temperature: float = 0.3, max_tokens: int = 600, reasoning_effort: str | None = None,
+                          tool_choice: str = "auto") -> AsyncIterator[dict]:
+        """Chat completions with `stream: true`: yields each server-sent JSON chunk (OpenAI format)."""
+        s = get_settings()
+        body: dict[str, Any] = {"model": model or s.sarvam_llm_model, "messages": messages, "stream": True,
+                                "temperature": temperature, "max_tokens": max_tokens}
+        if reasoning_effort or s.sarvam_llm_reasoning_effort:
+            body["reasoning_effort"] = reasoning_effort or s.sarvam_llm_reasoning_effort
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice
+        try:
+            async with self._client.stream("POST", f"{self.base_url}/v1/chat/completions", json=body,
+                                           headers=self._headers(), timeout=s.llm_timeout_seconds) as r:
+                if r.status_code >= 400:
+                    raw = (await r.aread()).decode("utf-8", "replace")
+                    try:
+                        err = json.loads(raw).get("error", {})
+                    except ValueError:
+                        err = {}
+                    log.warning("sarvam_error", path="/v1/chat/completions(stream)", status=r.status_code, body=raw[:500])
+                    raise SarvamError(err.get("message") or raw[:300], r.status_code, err.get("code"))
+                async for line in r.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        return
+                    if data:
+                        yield json.loads(data)
+        except httpx.TransportError as e:
+            raise SarvamError(f"Network error contacting Sarvam: {e}") from e
 
     async def aclose(self) -> None:
         await self._client.aclose()
