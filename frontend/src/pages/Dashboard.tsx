@@ -10,6 +10,8 @@ interface Overview {
   avg_call_duration_seconds: number; resolved: number; resolution_rate: number | null; escalated: number
   languages: Record<string, number>; channels: Record<string, number>; customer_satisfaction: number | null
   top_tools: { tool: string; count: number }[]; daily: { date: string; count: number }[]
+  hours: number[]; timezone: string; by_status: Record<string, number>
+  leads: { total: number; by_status: Record<string, number> }; escalations: { total: number; by_status: Record<string, number> }
 }
 
 const DAYS = 30
@@ -79,7 +81,7 @@ function DailyChart({ daily }: { daily: Overview['daily'] }) {
         </defs>
         {[0, 0.5, 1].map((f) => (
           <g key={f}>
-            <line x1={PL} x2={W - 8} y1={y(niceMax * f)} y2={y(niceMax * f)} stroke="#e5e5ea" strokeDasharray={f ? '3 4' : undefined} />
+            <line x1={PL} x2={W - 8} y1={y(niceMax * f)} y2={y(niceMax * f)} stroke="#e5e5ea" strokeWidth="1" />
             <text x={PL - 8} y={y(niceMax * f) + 3.5} textAnchor="end" fontSize="10" fill="#a1a1a6">{niceMax * f}</text>
           </g>
         ))}
@@ -102,6 +104,89 @@ function DailyChart({ daily }: { daily: Overview['daily'] }) {
           <div className="text-white/70">{h.count} conversation{h.count === 1 ? '' : 's'}</div>
         </div>
       )}
+    </div>
+  )
+}
+
+const hourLabel = (h: number) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`
+
+/** Calls by hour of day (business timezone): 24 columns, single hue, peak labelled, per-column tooltip. */
+function HourChart({ hours, timezone }: { hours: number[]; timezone: string }) {
+  const [hover, setHover] = useState<number | null>(null)
+  const W = 640, H = 180, PL = 28, PB = 22, PT = 18
+  const max = Math.max(4, ...hours)
+  const niceMax = Math.ceil(max / 4) * 4
+  const slot = (W - PL - 8) / 24
+  const bw = Math.min(24, slot - 2) // <=24px thick, 2px surface gap between neighbours
+  const x = (i: number) => PL + i * slot + (slot - bw) / 2
+  const y = (v: number) => PT + (1 - v / niceMax) * (H - PT - PB)
+  const base = y(0)
+  const peak = hours.reduce((best, v, i) => (v > hours[best] ? i : best), 0)
+  const total = hours.reduce((a, v) => a + v, 0)
+  // Rounded 4px data-end, square at the baseline.
+  const col = (i: number, v: number) => {
+    const top = y(v), r = Math.min(4, (base - top) / 2, bw / 2), l = x(i), rt = l + bw
+    return `M${l},${base}V${top + r}Q${l},${top} ${l + r},${top}H${rt - r}Q${rt},${top} ${rt},${top + r}V${base}Z`
+  }
+  if (!total) return <div className="py-6 text-center text-sm text-slate-400">No calls yet</div>
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img"
+        aria-label={`Calls by hour of day in ${timezone}. Busiest: ${hourLabel(peak)} with ${hours[peak]}.`} onMouseLeave={() => setHover(null)}>
+        {[0, 0.5, 1].map((f) => (
+          <g key={f}>
+            <line x1={PL} x2={W - 8} y1={y(niceMax * f)} y2={y(niceMax * f)} stroke="#e5e5ea" strokeWidth="1" />
+            <text x={PL - 8} y={y(niceMax * f) + 3.5} textAnchor="end" fontSize="10" fill="#a1a1a6">{niceMax * f}</text>
+          </g>
+        ))}
+        {hours.map((v, i) => (
+          <g key={i} onMouseEnter={() => setHover(i)}>
+            {/* Hit target spans the whole slot, taller than the mark. */}
+            <rect x={PL + i * slot} y={PT} width={slot} height={base - PT} fill="transparent" />
+            {v > 0 && <path d={col(i, v)} fill="#0071e3" fillOpacity={hover == null || hover === i ? 1 : 0.45} />}
+          </g>
+        ))}
+        {hours[peak] > 0 && <text x={x(peak) + bw / 2} y={y(hours[peak]) - 5} textAnchor="middle" fontSize="10" fontWeight="600" fill="#1d1d1f">{hours[peak]}</text>}
+        {[0, 6, 12, 18].map((i) => (
+          <text key={i} x={x(i)} y={H - 4} fontSize="10" fill="#a1a1a6">{hourLabel(i)}</text>
+        ))}
+      </svg>
+      {hover != null && (
+        <div className="pointer-events-none absolute top-0 -translate-x-1/2 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur"
+          style={{ left: `${((x(hover) + bw / 2) / W) * 100}%` }}>
+          <div className="font-medium">{hourLabel(hover)} – {hourLabel((hover + 1) % 24)}</div>
+          <div className="text-white/70">{hours[hover]} conversation{hours[hover] === 1 ? '' : 's'}</div>
+        </div>
+      )}
+      <table className="sr-only"><caption>Conversations by hour ({timezone})</caption>
+        <tbody>{hours.map((v, i) => <tr key={i}><th>{hourLabel(i)}</th><td>{v}</td></tr>)}</tbody></table>
+    </div>
+  )
+}
+
+const LEAD_ORDER = ['new', 'qualified', 'contacted', 'won', 'lost']
+
+/** Lead pipeline as counts (not a chart: five numbers read faster as numbers). */
+function FollowUpSummary({ leads, escalations }: { leads: Overview['leads']; escalations: Overview['escalations'] }) {
+  const won = leads.by_status.won ?? 0
+  const closed = won + (leads.by_status.lost ?? 0)
+  const open = (escalations.by_status.open ?? 0) + (escalations.by_status.assigned ?? 0)
+  return (
+    <div>
+      <div className="grid grid-cols-5 gap-2 text-center">
+        {LEAD_ORDER.map((st) => (
+          <Link key={st} to="/follow-ups" className="rounded-2xl bg-slate-50 px-1 py-3 transition hover:bg-slate-100">
+            <div className="text-xl font-semibold tabular-nums text-slate-900">{leads.by_status[st] ?? 0}</div>
+            <div className="mt-0.5 text-[11px] capitalize text-slate-500">{st}</div>
+          </Link>
+        ))}
+      </div>
+      <div className="mt-4 space-y-1.5 text-sm text-slate-600">
+        <div className="flex justify-between"><span>Win rate (of closed leads)</span>
+          <span className="font-medium tabular-nums text-slate-900">{closed ? `${Math.round((won / closed) * 100)}%` : '—'}</span></div>
+        <div className="flex justify-between"><span>Escalations waiting</span>
+          <Link to="/follow-ups?tab=escalations" className="font-medium tabular-nums text-slate-900 hover:text-brand-500">{open}</Link></div>
+      </div>
     </div>
   )
 }
@@ -157,6 +242,18 @@ export default function Dashboard() {
             <Panel className="lg:col-span-2" title="Most used tools" subtitle="What callers asked the agent to do">
               <Bars data={Object.fromEntries(data.top_tools.map((t) => [t.tool, t.count]))} />
             </Panel>
+            {/* Guarded: an older backend (e.g. a partial manual upload) doesn't send these fields. */}
+            {data.hours && (
+              <Panel className="lg:col-span-2" title="Busiest hours" subtitle={`When conversations start (${data.timezone} time)`}>
+                <HourChart hours={data.hours} timezone={data.timezone} />
+              </Panel>
+            )}
+            {data.leads && data.escalations && (
+              <Panel title="Leads & follow-ups" subtitle={`${data.leads.total} leads captured`}>
+                <FollowUpSummary leads={data.leads} escalations={data.escalations} />
+              </Panel>
+            )}
+            <Panel title="Outcomes" subtitle="How conversations ended"><Bars data={data.by_status} /></Panel>
           </div>
         </>
       )}

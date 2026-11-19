@@ -21,7 +21,7 @@ Legend: ✅ done · 🟡 partial · ⬜ pending
 - ✅ Live-tested 2026-11-17: REST + streaming STT (EN/TA, language detected), REST + streaming TTS (~0.7 s to first audio), chat tool calling, multi-turn site-visit and doctor bookings
 - ⬜ Live microphone call in the browser console (needs a human caller)
 - ⬜ Phone channel (Twilio/Exotel media streams → same `VoiceSession`, 8 kHz μ-law)
-- ⬜ LLM token streaming → sentence-level TTS for lower latency; warm TTS socket reuse
+- ✅ LLM token streaming → sentence-level TTS, TTS socket opened while the LLM thinks (measured: first audio ~0.85 s vs ~1.27 s before). `LLM_STREAMING=false` turns it off
 
 ## Phase 3 — Intelligence 🟡
 - ✅ Context manager (business / customer / conversation), dynamic system prompts, grounding rules
@@ -41,7 +41,14 @@ Legend: ✅ done · 🟡 partial · ⬜ pending
 
 ## Phase 5 — Dashboard 🟡
 - ✅ Dashboard KPIs, business onboarding, business profile, agent config (versioned), voice/languages/tools, knowledge upload/reindex/search test, integrations, calls list + transcript + tool history + escalations, business data views
-- ⬜ CRUD forms for properties/doctors in UI (API exists), escalation assignment workflow, CSAT capture, recordings (consent-aware), richer analytics
+- ✅ Team management (add people, roles, deactivate with immediate lock-out, admin password reset), change password
+- ✅ Follow-ups: lead and escalation workflow (status, assignee, notes, filters, search, CSV export)
+- ✅ Agent test chat over HTTP (no microphone or WebSockets needed), config version history with restore, opening-hours editor
+- ✅ Calls: filters (status, channel, dates), transcript search, CSV export, load more
+- ✅ Analytics: busiest hours and days in the business timezone, lead pipeline, outcomes
+- ✅ Website chat widget (`widget.js`, HTTP only, Shadow DOM) with embed snippet and preview page
+- ✅ Email alerts to business admins on new leads and handoffs (any SMTP provider; off until configured)
+- ⬜ CRUD forms for properties/doctors in UI (API exists), CSAT capture, recordings (consent-aware)
 
 ## Phase 6 — Production ⬜
 - ✅ Backend test suite (43 tests), Dockerfiles, compose, nginx WS proxy

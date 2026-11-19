@@ -57,7 +57,8 @@ export default function CustomCursor() {
     const onLeave = () => { visible = false }
 
     const frame = () => {
-      const node = el.current!
+      const node = el.current
+      if (!node) return // unmounted (e.g. an error boundary replaced the tree): stop the loop
       let tx = mouse.x, ty = mouse.y, tw = 18, th = 18, tr = 9, ta = visible ? 1 : 0
       let bg = 'rgba(29, 29, 31, 0.28)'
       let showLabel = false

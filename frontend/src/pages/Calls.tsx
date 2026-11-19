@@ -1,10 +1,57 @@
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useToast } from '../components/Toast'
+import { downloadCsv } from '../services/csv'
 import { Badge, Empty, ErrorNote, Icons, PageHeader, fmtDate, statusTone } from '../components/ui'
 import { useApi } from '../hooks/useApi'
+import { useAuth } from '../hooks/useAuth'
+import { api } from '../services/api'
 import { LANGUAGES, type Conversation, type Message } from '../types'
 
+const PAGE = 100
+const STATUSES = ['all', 'completed', 'escalated', 'abandoned', 'active'] as const
+
 export function Calls() {
-  const { data, error } = useApi<Conversation[]>('/conversations?limit=100')
+  const { tenantId } = useAuth()
+  const toast = useToast()
+  const [status, setStatus] = useState<string>('all')
+  const [channel, setChannel] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [q, setQ] = useState('')
+  const [query, setQuery] = useState('') // debounced search
+  const [data, setData] = useState<Conversation[] | null>(null)
+  const [more, setMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { const t = window.setTimeout(() => setQuery(q.trim()), 350); return () => window.clearTimeout(t) }, [q])
+
+  const params = (offset: number) => {
+    const u = new URLSearchParams({ limit: String(PAGE), offset: String(offset) })
+    if (status !== 'all') u.set('status', status)
+    if (channel) u.set('channel', channel)
+    if (query) u.set('q', query)
+    if (from) u.set('date_from', new Date(`${from}T00:00:00`).toISOString())
+    if (to) u.set('date_to', new Date(new Date(`${to}T00:00:00`).getTime() + 86400000).toISOString()) // include the whole day
+    return u.toString()
+  }
+  const load = async (offset = 0) => {
+    setError(null)
+    try {
+      const rows = await api<Conversation[]>(`/conversations?${params(offset)}`)
+      setData((d) => (offset ? [...(d ?? []), ...rows] : rows))
+      setMore(rows.length === PAGE)
+    } catch (e) { setError((e as Error).message) }
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setData(null); load(0) }, [status, channel, query, from, to, tenantId])
+
+  const exportCsv = () => {
+    if (!data?.length) return
+    downloadCsv('calls', ['Started', 'Ended', 'Channel', 'Status', 'Languages', 'Intents', 'Summary'],
+      data.map((c) => [c.created_at, c.ended_at, c.channel, c.status, c.languages_used.map((l) => LANGUAGES[l] ?? l).join(' / '), c.intents.join(' / '), c.summary]))
+    toast(`Exported ${data.length} calls`)
+  }
+  const filtered = status !== 'all' || channel || query || from || to
   const { data: escalations } = useApi<{ id: string; conversation_id: string; reason: string; priority: string; summary: string; status: string; at: string }[]>('/escalations?status=open')
   return (
     <div>
@@ -18,6 +65,7 @@ export function Calls() {
               <div className="text-[15px] font-semibold text-slate-900">Open escalations</div>
               <div className="text-xs text-slate-500">{escalations.length} waiting for a human</div>
             </div>
+            <Link to="/follow-ups?tab=escalations" className="btn-ghost ml-auto">Assign & resolve</Link>
           </div>
           <div className="px-3 pb-3">
             {escalations.map((e) => (
@@ -31,8 +79,21 @@ export function Calls() {
           </div>
         </div>
       )}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {STATUSES.map((st) => (
+          <button key={st} onClick={() => setStatus(st)}
+            className={`rounded-full px-3 py-1 text-sm capitalize ring-1 ring-inset transition ${status === st ? 'bg-slate-900 text-white ring-slate-900' : 'bg-white text-slate-600 ring-slate-200 hover:ring-slate-300'}`}>{st}</button>
+        ))}
+        <select aria-label="Channel" className="input w-auto py-1.5" value={channel} onChange={(e) => setChannel(e.target.value)}>
+          <option value="">All channels</option><option value="web_voice">Web voice</option><option value="web_text">Web text</option><option value="widget">Website widget</option><option value="phone">Phone</option>
+        </select>
+        <label className="flex items-center gap-1 text-sm text-slate-500">From <input type="date" aria-label="From date" className="input w-auto py-1.5" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="flex items-center gap-1 text-sm text-slate-500">To <input type="date" aria-label="To date" className="input w-auto py-1.5" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></label>
+        <input aria-label="Search calls" className="input ml-auto w-60 py-1.5" placeholder="Search summaries & transcripts…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button className="btn-ghost" onClick={exportCsv} disabled={!data?.length}>Export CSV</button>
+      </div>
       <div className="card overflow-x-auto px-3 py-2">
-        {data?.length ? (
+        {!data ? <div className="p-6 text-sm text-slate-400">Loading…</div> : data.length ? (
           <table className="table">
             <thead><tr><th>Started</th><th>Channel</th><th>Status</th><th>Languages</th><th>Intents</th><th>Summary</th></tr></thead>
             <tbody>{data.map((c) => (
@@ -46,7 +107,8 @@ export function Calls() {
               </tr>
             ))}</tbody>
           </table>
-        ) : <div className="p-3"><Empty icon={Icons.chat}>No conversations yet. Start one from the Voice page.</Empty></div>}
+        ) : <div className="p-3"><Empty icon={Icons.chat}>{filtered ? 'No calls match these filters.' : 'No conversations yet. Start one from the Voice page.'}</Empty></div>}
+        {more && <div className="p-3 text-center"><button className="btn-ghost" onClick={() => load(data?.length ?? 0)}>Load more</button></div>}
       </div>
     </div>
   )

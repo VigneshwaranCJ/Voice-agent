@@ -12,6 +12,7 @@ export interface Tenant { id: string; name: string; slug: string; industry: stri
 export interface AgentConfig {
   id?: string
   version?: number
+  created_at?: string
   persona_name: string
   personality: string
   system_instructions: string

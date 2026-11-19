@@ -16,14 +16,16 @@ export const session = {
   set tenantId(v: string | null) { v ? localStorage.setItem(TENANT_KEY, v) : localStorage.removeItem(TENANT_KEY) },
 }
 
-export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+/** `noTenant` sends the request without the selected business (platform-level calls by platform admins). */
+export async function api<T = unknown>(path: string,
+  { json, noTenant, ...init }: RequestInit & { json?: unknown; noTenant?: boolean } = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (session.token) headers.set('Authorization', `Bearer ${session.token}`)
-  if (session.tenantId) headers.set('X-Tenant-ID', session.tenantId)
+  if (session.tenantId && !noTenant) headers.set('X-Tenant-ID', session.tenantId)
   let body = init.body
-  if (init.json !== undefined) {
+  if (json !== undefined) {
     headers.set('Content-Type', 'application/json')
-    body = JSON.stringify(init.json)
+    body = JSON.stringify(json)
   }
   const res = await fetch(`/api/v1${path}`, { ...init, headers, body })
   if (res.status === 401 && !path.startsWith('/auth/login')) {

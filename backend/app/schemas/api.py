@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -16,6 +16,38 @@ class LoginIn(BaseModel):
 class ChangePasswordIn(BaseModel):
     current_password: str = Field(max_length=200)
     new_password: str = Field(min_length=12, max_length=200)
+
+
+TeamRole = Literal["platform_admin", "tenant_admin", "tenant_agent"]
+
+
+class UserCreateIn(BaseModel):
+    email: EmailStr
+    full_name: str = Field(default="", max_length=200)
+    role: TeamRole
+    password: str = Field(min_length=12, max_length=200)
+
+
+class UserUpdateIn(BaseModel):
+    full_name: str | None = Field(default=None, max_length=200)
+    role: TeamRole | None = None
+    is_active: bool | None = None
+
+
+class PasswordResetIn(BaseModel):
+    new_password: str = Field(min_length=12, max_length=200)
+
+
+class LeadUpdateIn(BaseModel):
+    status: Literal["new", "qualified", "contacted", "won", "lost"] | None = None
+    assigned_to: str | None = Field(default=None, max_length=200)  # null clears the assignment
+    notes: str | None = Field(default=None, max_length=4000)
+
+
+class EscalationUpdateIn(BaseModel):
+    status: Literal["open", "assigned", "resolved"] | None = None
+    assigned_to: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=4000)
 
 
 class TokenOut(BaseModel):

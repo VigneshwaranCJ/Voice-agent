@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Badge, Empty, ErrorNote, PageHeader } from '../components/ui'
+import TestChat from '../components/TestChat'
+import { useToast } from '../components/Toast'
+import { Badge, Empty, ErrorNote, PageHeader, fmtDate } from '../components/ui'
 import { useApi } from '../hooks/useApi'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../services/api'
@@ -54,7 +56,8 @@ export default function Agents() {
 }
 
 function AgentEditor({ id, onSaved }: { id: string; onSaved: () => void }) {
-  const { data: agent, error, setData } = useApi<Agent>(`/agents/${id}`)
+  const { data: agent, error, setData, reload: reloadAgent } = useApi<Agent>(`/agents/${id}`)
+  const toast = useToast()
   const { data: catalog } = useApi<ToolInfo[]>('/agents/tools/catalog')
   const { data: industries } = useApi<{ available: { key: string; default_tools: string[] }[] }>('/industries')
   const { data: voices } = useApi<{ suggested: Record<string, string[]> }>('/voice-profiles/voices')
@@ -82,6 +85,7 @@ function AgentEditor({ id, onSaved }: { id: string; onSaved: () => void }) {
       if (vp) await api(`/voice-profiles/${vp.id}`, { method: 'PUT', json: vp })
       setData(updated)
       setMsg(`Saved — configuration version ${updated.config?.version}`)
+      toast(`Saved as version ${updated.config?.version}`)
       onSaved()
     } catch (e) { setErr((e as Error).message) } finally { setSaving(false) }
   }
@@ -159,6 +163,9 @@ function AgentEditor({ id, onSaved }: { id: string; onSaved: () => void }) {
         </div>
       </div>
       <button className="btn" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+      <TestChat key={`${agent.id}:${cfg.version ?? ''}`} agentId={agent.id} languages={agent.languages} />
+      <WidgetEmbed agentId={agent.id} enabled={agent.public_widget_enabled} />
+      <ConfigHistory agentId={agent.id} current={cfg.version} onRestored={() => { reloadAgent(); onSaved() }} />
     </div>
   )
 }
@@ -232,5 +239,82 @@ function NewAgentForm({ onCreated, onCancel }: { onCreated: (a: Agent) => void; 
         <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
     </form>
+  )
+}
+
+/** Every save creates a configuration version; restoring one saves it again as the newest version. */
+function ConfigHistory({ agentId, current, onRestored }: { agentId: string; current?: number; onRestored: () => void }) {
+  const { data: versions, reload } = useApi<AgentConfig[]>(`/agents/${agentId}/config/history`)
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState<number | null>(null)
+  useEffect(() => { reload() }, [current, reload])
+  const restore = async (v: AgentConfig) => {
+    if (!confirm(`Restore version ${v.version}? It becomes the newest version; nothing is deleted.`)) return
+    setBusy(v.version ?? null)
+    try {
+      const saved = await api<AgentConfig>(`/agents/${agentId}/config`, { method: 'PUT', json: {
+        persona_name: v.persona_name, personality: v.personality, system_instructions: v.system_instructions,
+        greeting: v.greeting, enabled_tools: v.enabled_tools, workflows: v.workflows,
+        escalation_policy: v.escalation_policy, llm_settings: v.llm_settings,
+      } })
+      toast(`Version ${v.version} restored as version ${saved.version}`)
+      onRestored()
+    } catch (e) { toast((e as Error).message, 'error') } finally { setBusy(null) }
+  }
+  return (
+    <div className="card">
+      <button className="flex w-full items-center justify-between text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span><span className="text-sm font-semibold">Version history</span>
+          <span className="ml-2 text-xs text-slate-500">{versions ? `${versions.length} version${versions.length === 1 ? '' : 's'}` : ''}</span></span>
+        <span className="text-xs text-slate-500">{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && (
+        <div className="mt-3 divide-y divide-slate-100">
+          {versions?.map((v) => (
+            <div key={v.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+              <span className="font-medium text-slate-900">v{v.version}</span>
+              {v.version === current && <Badge tone="green">current</Badge>}
+              <span className="text-slate-500">{fmtDate(v.created_at)}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-slate-400">
+                {v.persona_name} · {v.enabled_tools.length} tools{v.system_instructions ? ` · ${v.system_instructions.slice(0, 60)}` : ''}
+              </span>
+              {v.version !== current && (
+                <button className="btn-ghost" disabled={busy !== null} onClick={() => restore(v)}>{busy === v.version ? 'Restoring…' : 'Restore'}</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Copy-paste snippet that puts this agent's chat on the business's own website. */
+function WidgetEmbed({ agentId, enabled }: { agentId: string; enabled: boolean }) {
+  const toast = useToast()
+  const snippet = `<script src="${window.location.origin}/widget.js" data-agent="${agentId}" async></script>`
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(snippet); toast('Embed code copied') }
+    catch { toast('Copy failed. Select the code and copy it manually.', 'error') }
+  }
+  return (
+    <div className="card">
+      <div className="mb-1 text-sm font-semibold">Website widget</div>
+      <p className="mb-3 text-xs text-slate-500">
+        Paste this just before <code>&lt;/body&gt;</code> on your website. Visitors get a chat button that talks to this agent.
+        Optional: <code>data-color="#0071e3"</code>, <code>data-title="Chat with us"</code>, <code>data-position="left"</code>.
+      </p>
+      {!enabled && (
+        <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-inset ring-amber-200">
+          The widget is off for this agent. Tick “Allow public website widget” above and save to turn it on.
+        </div>
+      )}
+      <pre className="overflow-x-auto rounded-xl bg-slate-900 p-3 text-xs text-slate-100"><code>{snippet}</code></pre>
+      <div className="mt-3 flex gap-2">
+        <button className="btn" onClick={copy}>Copy code</button>
+        <a className="btn-ghost" href={`/widget-demo.html?agent=${encodeURIComponent(agentId)}`} target="_blank" rel="noreferrer">Preview</a>
+      </div>
+    </div>
   )
 }

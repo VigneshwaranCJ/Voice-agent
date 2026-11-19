@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useApi } from '../hooks/useApi'
 import { Badge, Empty, PageHeader, fmtDate } from '../components/ui'
@@ -21,7 +22,6 @@ export default function BusinessData() {
   const industry = tenants.find((t) => t.id === tenantId)?.industry
   const props = useApi<Row[]>(industry === 'real_estate' ? '/data/properties' : null)
   const doctors = useApi<Row[]>(industry === 'healthcare' ? '/data/doctors' : null)
-  const leads = useApi<Row[]>('/leads')
   const appts = useApi<Row[]>('/appointments')
   return (
     <div className="space-y-6">
@@ -37,8 +37,10 @@ export default function BusinessData() {
       )}
       <div className="card"><div className="mb-3 text-sm font-semibold">Appointments / site visits</div>
         <Table rows={appts.data} cols={[['starts_at', 'When', (r) => fmtDate(r.starts_at)], ['kind', 'Type'], ['contact_name', 'Name'], ['contact_phone', 'Phone'], ['status', 'Status'], ['notes', 'Notes']]} /></div>
-      <div className="card"><div className="mb-3 text-sm font-semibold">Leads</div>
-        <Table rows={leads.data} cols={[['at', 'Created', (r) => fmtDate(r.at)], ['name', 'Name'], ['phone', 'Phone'], ['interest', 'Interest'], ['budget', 'Budget'], ['status', 'Status'], ['assigned_to', 'Assigned']]} /></div>
+      <div className="card flex flex-wrap items-center justify-between gap-3">
+        <div><div className="text-sm font-semibold">Leads</div>
+          <div className="text-sm text-slate-500">Assign, track and export leads on the Follow-ups page.</div></div>
+        <Link to="/follow-ups" className="btn">Open Follow-ups</Link></div>
     </div>
   )
 }

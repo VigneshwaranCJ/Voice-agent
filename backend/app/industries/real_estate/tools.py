@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from app.notifications.email import lead_alert
 from app.industries.real_estate.models import Property, SalesExecutive
 from app.models import Appointment, Lead
 from app.tools.common import IdentifyCustomerArgs, identify_customer, normalize_phone
@@ -155,6 +156,8 @@ async def schedule_site_visit(ctx: ToolContext, a: SiteVisitArgs) -> dict:
                     location_preference=p.locality, assigned_to=exe.name if exe else None,
                     details={"property_id": p.id, "appointment_id": appt.id}))
     await ctx.db.commit()
+    lead_alert(ctx.tenant_id, name=a.name, phone=phone,
+               interest=f"Site visit: {p.name}, {starts.strftime('%a %d %b, %I:%M %p')}")
     return {"ok": True, "appointment_id": appt.id, "property": p.name, "when": starts.strftime("%A %d %B, %I:%M %p"),
             "sales_executive": exe.name if exe else None}
 

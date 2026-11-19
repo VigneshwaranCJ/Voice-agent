@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,46 @@ async def widget_session(agent_id: str, db: AsyncSession = DB):
         raise HTTPException(404, "Agent not available")
     token = create_access_token(user_id=f"widget:{agent_id}", tenant_id=a.tenant_id, role="widget",
                                 extra={"kind": "widget", "aid": agent_id}, expires_minutes=15)
-    return {"token": token, "agent": {"id": a.id, "name": a.name, "languages": a.languages}}
+    bundle = await load_agent_bundle(db, a.id, tenant_id=a.tenant_id)
+    greeting = greeting_for(bundle, a.default_language) if bundle else ""
+    business = bundle.profile.display_name if bundle and bundle.profile else ""
+    return {"token": token, "expires_in": 15 * 60,
+            "agent": {"id": a.id, "name": a.name, "languages": a.languages, "default_language": a.default_language,
+                      "persona": bundle.config.persona_name if bundle else "", "business": business, "greeting": greeting}}
+
+
+async def _widget_agent(db: AsyncSession, authorization: str | None) -> Agent:
+    """The agent a widget token was issued for. Tenant and agent come from the token, never the request body."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    try:
+        c = decode_token(token)
+    except Exception:
+        raise HTTPException(401, "Widget session expired") from None
+    if c.get("kind") != "widget":
+        raise HTTPException(401, "Not a widget session")
+    a = (await db.execute(select(Agent).where(Agent.id == c.get("aid"), Agent.tenant_id == c.get("tid"),
+                                              Agent.is_active.is_(True)))).unique().scalar_one_or_none()
+    if not a or not a.public_widget_enabled:
+        raise HTTPException(404, "Agent not available")
+    return a
+
+
+@router.post("/public/chat", response_model=ChatOut)
+async def widget_chat(body: ChatIn, authorization: str | None = Header(default=None), db: AsyncSession = DB):
+    """Text chat for the website widget (plain HTTP, so it works on hosts without WebSocket support)."""
+    a = await _widget_agent(db, authorization)
+    return await _text_turn(db, a.id, a.tenant_id, body, channel="widget")
+
+
+@router.post("/public/chat/{conv_id}/end")
+async def widget_chat_end(conv_id: str, authorization: str | None = Header(default=None), db: AsyncSession = DB):
+    """Close a widget chat so it is summarised and shows as completed under Calls."""
+    a = await _widget_agent(db, authorization)
+    state = await get_state_store().get(conv_id)
+    if not state or state.tenant_id != a.tenant_id or state.agent_id != a.id:
+        return {"ok": True, "already_ended": True}  # nothing to close (or not this widget's chat)
+    await end_conversation(db, state, None, "ended_by_user")
+    return {"ok": True}
 
 
 @router.post("/agents/{agent_id}/voice-ticket")
@@ -116,18 +155,23 @@ async def voice_ws(ws: WebSocket, agent_id: str = Query(...), token: str = Query
 @router.post("/agents/{agent_id}/chat", response_model=ChatOut)
 async def chat(agent_id: str, body: ChatIn, p: Principal = Depends(tenant_scope), db: AsyncSession = DB):
     """Text test console: same engine, tools and guardrails as voice, without audio."""
-    bundle = await load_agent_bundle(db, agent_id, tenant_id=p.tenant_id)
+    return await _text_turn(db, agent_id, p.tenant_id, body, channel="web_text")
+
+
+async def _text_turn(db: AsyncSession, agent_id: str, tenant_id: str, body: ChatIn, channel: str) -> ChatOut:
+    bundle = await load_agent_bundle(db, agent_id, tenant_id=tenant_id)
     if not bundle:
         raise HTTPException(404, "Agent not found")
     if isinstance(get_llm(), SarvamLLM) and not get_settings().sarvam_configured:
         raise HTTPException(503, "SARVAM_API_KEY is not configured on the server")
     store = get_state_store()
     state = await store.get(body.conversation_id) if body.conversation_id else None
-    if state and state.tenant_id != p.tenant_id:
+    # A conversation id only continues a chat with the same business *and* agent.
+    if state and (state.tenant_id != tenant_id or state.agent_id != agent_id):
         raise HTTPException(404, "Conversation not found")
     engine = AgentEngine(db, bundle)
     if not state:
-        state, _ = await start_conversation(db, bundle, "web_text")
+        state, _ = await start_conversation(db, bundle, channel)
         if body.language:
             state.language = body.language
         await engine.record_greeting(state, greeting_for(bundle, state.language))

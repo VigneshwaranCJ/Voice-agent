@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useToast } from '../components/Toast'
 import { Badge, Empty, ErrorNote, PageHeader, fmtDate } from '../components/ui'
 import { useApi } from '../hooks/useApi'
 import { useAuth } from '../hooks/useAuth'
@@ -9,8 +10,9 @@ export function BusinessProfile() {
   const { data, error, setData } = useApi<Record<string, any>>('/business-profile')
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [hours, setHours] = useState('')
-  useEffect(() => { if (data) setHours(JSON.stringify(data.operating_hours, null, 2)) }, [data])
+  const toast = useToast()
+  const [hours, setHours] = useState<[string, string][]>([])
+  useEffect(() => { if (data) setHours(Object.entries(data.operating_hours ?? {}) as [string, string][]) }, [data])
   if (!data) return <ErrorNote error={error} />
   const field = (k: string, label: string) => (
     <div><label className="label">{label}</label><input className="input" value={data[k] ?? ''} onChange={(e) => setData({ ...data, [k]: e.target.value })} /></div>
@@ -18,9 +20,10 @@ export function BusinessProfile() {
   const save = async () => {
     setMsg(null); setErr(null)
     try {
-      const body = { ...data, operating_hours: JSON.parse(hours || '{}') }
-      setData(await api('/business-profile', { method: 'PUT', json: body }))
+      const operating_hours = Object.fromEntries(hours.map(([k, v]) => [k.trim(), v.trim()]).filter(([k, v]) => k && v))
+      setData(await api('/business-profile', { method: 'PUT', json: { ...data, operating_hours } }))
       setMsg('Saved')
+      toast('Business profile saved')
     } catch (e) { setErr((e as Error).message) }
   }
   return (
@@ -33,7 +36,7 @@ export function BusinessProfile() {
         <div className="md:col-span-2"><label className="label">Description</label><textarea className="input h-20" value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} /></div>
         <div className="md:col-span-2"><label className="label">Services (comma separated)</label>
           <input className="input" value={(data.services ?? []).join(', ')} onChange={(e) => setData({ ...data, services: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} /></div>
-        <div className="md:col-span-2"><label className="label">Operating hours (JSON)</label><textarea className="input h-24 font-mono text-xs" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
+        <div className="md:col-span-2"><HoursEditor rows={hours} onChange={setHours} /></div>
       </div>
       <button className="btn mt-4" onClick={save}>Save</button>
     </div>
@@ -120,6 +123,41 @@ export function Tenants() {
         <table className="table"><thead><tr><th>Name</th><th>Industry</th><th>Slug</th><th>Created</th></tr></thead>
           <tbody>{data.map((t) => <tr key={t.id}><td className="font-medium">{t.name}</td><td>{t.industry}</td><td className="font-mono text-xs">{t.slug}</td><td>{fmtDate(t.created_at)}</td></tr>)}</tbody></table>
       ) : <Empty>No businesses.</Empty>}</div>
+    </div>
+  )
+}
+
+const HOURS_PRESETS: Record<string, [string, string][]> = {
+  'Mon–Sat, Sunday closed': [['Mon-Sat', '9:30 AM - 6:30 PM'], ['Sunday', 'Closed']],
+  'Mon–Fri, weekends closed': [['Mon-Fri', '9:00 AM - 6:00 PM'], ['Sat-Sun', 'Closed']],
+  'Open every day': [['Mon-Sun', '9:00 AM - 9:00 PM']],
+  'Hospital (OPD + 24×7 emergency)': [['OPD Mon-Sat', '9:00 AM - 6:00 PM'], ['Emergency', '24 x 7']],
+}
+
+/** Opening hours as label → hours rows (stored as a JSON object the agent reads on every call). */
+function HoursEditor({ rows, onChange }: { rows: [string, string][]; onChange: (r: [string, string][]) => void }) {
+  const set = (i: number, j: 0 | 1, v: string) => onChange(rows.map((r, k) => (k === i ? (j ? [r[0], v] : [v, r[1]]) : r)))
+  return (
+    <div>
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <span className="label mb-0">Opening hours</span>
+        <select aria-label="Fill from a preset" className="input w-auto py-1 text-xs" value=""
+          onChange={(e) => e.target.value && onChange(HOURS_PRESETS[e.target.value])}>
+          <option value="">Fill from a preset…</option>
+          {Object.keys(HOURS_PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
+        </select>
+      </div>
+      <div className="space-y-2">
+        {rows.map(([day, time], i) => (
+          <div key={i} className="flex gap-2">
+            <input aria-label="Days" className="input w-44" placeholder="e.g. Mon-Sat" value={day} onChange={(e) => set(i, 0, e.target.value)} />
+            <input aria-label="Hours" className="input" placeholder="e.g. 9:30 AM - 6:30 PM, or Closed" value={time} onChange={(e) => set(i, 1, e.target.value)} />
+            <button type="button" className="btn-ghost" aria-label={`Remove ${day || 'row'}`} onClick={() => onChange(rows.filter((_, k) => k !== i))}>Remove</button>
+          </div>
+        ))}
+        {!rows.length && <p className="text-xs text-slate-400">No hours set. The agent will say it doesn't know your timings.</p>}
+        <button type="button" className="btn-ghost" onClick={() => onChange([...rows, ['', '']])}>+ Add row</button>
+      </div>
     </div>
   )
 }

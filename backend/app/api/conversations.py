@@ -1,28 +1,53 @@
+from collections import Counter
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import DB, Principal, tenant_scope
+from app.core.deps import DB, Principal, audit, tenant_scope
+from app.core.timeutil import as_utc
 from app.models import (
-    Appointment, CallEvent, CallSession, Conversation, ConversationMessage, EscalationRecord, Lead, ToolExecution,
+    Appointment, BusinessProfile, CallEvent, CallSession, Conversation, ConversationMessage, EscalationRecord, Lead, ToolExecution,
 )
-from app.schemas.api import ConversationOut, MessageOut
+from app.schemas.api import ConversationOut, EscalationUpdateIn, LeadUpdateIn, MessageOut
 
 router = APIRouter(tags=["calls"])
 
 
 @router.get("/conversations", response_model=list[ConversationOut])
-async def list_conversations(agent_id: str | None = None, status: str | None = None,
-                             limit: int = Query(50, le=200), offset: int = 0,
+async def list_conversations(agent_id: str | None = None, status: str | None = None, channel: str | None = None,
+                             language: str | None = None, q: str | None = Query(None, max_length=200),
+                             date_from: datetime | None = None, date_to: datetime | None = None,
+                             limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
                              p: Principal = Depends(tenant_scope), db: AsyncSession = DB):
-    q = select(Conversation).where(Conversation.tenant_id == p.tenant_id)
+    """Calls for the caller's business, newest first. `q` searches summaries and transcripts."""
+    stmt = select(Conversation).where(Conversation.tenant_id == p.tenant_id)
     if agent_id:
-        q = q.where(Conversation.agent_id == agent_id)
+        stmt = stmt.where(Conversation.agent_id == agent_id)
     if status:
-        q = q.where(Conversation.status == status)
-    return (await db.execute(q.order_by(Conversation.created_at.desc()).limit(limit).offset(offset))).scalars().all()
+        stmt = stmt.where(Conversation.status == status)
+    if channel:
+        stmt = stmt.where(Conversation.channel == channel)
+    if language:
+        stmt = stmt.where(Conversation.language == language)
+    if date_from:
+        stmt = stmt.where(Conversation.created_at >= _utc(date_from))
+    if date_to:
+        stmt = stmt.where(Conversation.created_at < _utc(date_to))
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        in_transcript = select(ConversationMessage.id).where(
+            ConversationMessage.tenant_id == p.tenant_id, ConversationMessage.conversation_id == Conversation.id,
+            ConversationMessage.content.ilike(like)).exists()
+        stmt = stmt.where(Conversation.summary.ilike(like) | in_transcript)
+    return (await db.execute(stmt.order_by(Conversation.created_at.desc()).limit(limit).offset(offset))).scalars().all()
+
+
+def _utc(dt: datetime) -> datetime:
+    """Aware UTC bound: correct for PostgreSQL timestamptz; SQLite's DateTime storage ignores the zone."""
+    return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 @router.get("/conversations/{conv_id}")
@@ -64,17 +89,65 @@ async def list_escalations(status: str | None = None, p: Principal = Depends(ten
     q = select(EscalationRecord).where(EscalationRecord.tenant_id == p.tenant_id)
     if status:
         q = q.where(EscalationRecord.status == status)
-    rows = (await db.execute(q.order_by(EscalationRecord.created_at.desc()).limit(100))).scalars().all()
-    return [{"id": e.id, "conversation_id": e.conversation_id, "reason": e.reason, "priority": e.priority,
-             "summary": e.summary, "status": e.status, "context": e.context, "at": e.created_at} for e in rows]
+    rows = (await db.execute(q.order_by(EscalationRecord.created_at.desc()).limit(200))).scalars().all()
+    return [_escalation_out(e) for e in rows]
+
+
+def _escalation_out(e: EscalationRecord) -> dict:
+    return {"id": e.id, "conversation_id": e.conversation_id, "reason": e.reason, "priority": e.priority,
+            "summary": e.summary, "status": e.status, "assigned_to": e.assigned_to,
+            "notes": (e.context or {}).get("notes", ""), "context": e.context, "at": e.created_at}
+
+
+@router.patch("/escalations/{escalation_id}")
+async def update_escalation(escalation_id: str, body: EscalationUpdateIn, request: Request,
+                            p: Principal = Depends(tenant_scope), db: AsyncSession = DB):
+    e = (await db.execute(select(EscalationRecord).where(
+        EscalationRecord.tenant_id == p.tenant_id, EscalationRecord.id == escalation_id))).scalar_one_or_none()
+    if not e:
+        raise HTTPException(404, "Escalation not found")
+    sent = body.model_fields_set
+    if "assigned_to" in sent:
+        e.assigned_to = (body.assigned_to or "").strip() or None
+        if e.assigned_to and e.status == "open" and "status" not in sent:
+            e.status = "assigned"  # assigning someone moves it out of the unowned queue
+    if body.status is not None:
+        e.status = body.status
+    if body.notes is not None:
+        e.context = {**(e.context or {}), "notes": body.notes}  # new dict so the JSON change is saved
+    await audit(db, request, p, "update", "escalation", e.id, status=e.status, assigned_to=e.assigned_to)
+    await db.commit()
+    return _escalation_out(e)
 
 
 @router.get("/leads")
 async def list_leads(p: Principal = Depends(tenant_scope), db: AsyncSession = DB):
     rows = (await db.execute(select(Lead).where(Lead.tenant_id == p.tenant_id)
                              .order_by(Lead.created_at.desc()).limit(200))).scalars().all()
-    return [{"id": r.id, "name": r.name, "phone": r.phone, "interest": r.interest, "budget": r.budget,
-             "status": r.status, "assigned_to": r.assigned_to, "at": r.created_at} for r in rows]
+    return [_lead_out(r) for r in rows]
+
+
+def _lead_out(r: Lead) -> dict:
+    return {"id": r.id, "name": r.name, "phone": r.phone, "interest": r.interest, "budget": r.budget,
+            "location_preference": r.location_preference, "status": r.status, "assigned_to": r.assigned_to,
+            "notes": (r.details or {}).get("notes", ""), "conversation_id": r.conversation_id, "at": r.created_at}
+
+
+@router.patch("/leads/{lead_id}")
+async def update_lead(lead_id: str, body: LeadUpdateIn, request: Request, p: Principal = Depends(tenant_scope),
+                      db: AsyncSession = DB):
+    r = (await db.execute(select(Lead).where(Lead.tenant_id == p.tenant_id, Lead.id == lead_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, "Lead not found")
+    if body.status is not None:
+        r.status = body.status
+    if "assigned_to" in body.model_fields_set:
+        r.assigned_to = (body.assigned_to or "").strip() or None
+    if body.notes is not None:
+        r.details = {**(r.details or {}), "notes": body.notes}  # new dict so the JSON change is saved
+    await audit(db, request, p, "update", "lead", r.id, status=r.status, assigned_to=r.assigned_to)
+    await db.commit()
+    return _lead_out(r)
 
 
 @router.get("/appointments")
@@ -108,8 +181,19 @@ async def analytics_overview(days: int = Query(30, le=365), p: Principal = Depen
     tools = (await db.execute(select(ToolExecution.tool_name, func.count()).where(
         ToolExecution.tenant_id == t, ToolExecution.created_at >= since).group_by(ToolExecution.tool_name)
         .order_by(func.count().desc()).limit(10))).all()
-    daily = (await db.execute(select(func.date(conv_base.c.created_at), func.count())
-                              .group_by(func.date(conv_base.c.created_at)).order_by(func.date(conv_base.c.created_at)))).all()
+    # Days and hours in the business's own timezone (timestamps are stored in UTC).
+    tz_name = (await db.execute(select(BusinessProfile.timezone).where(BusinessProfile.tenant_id == t))).scalar() or "Asia/Kolkata"
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        tz, tz_name = ZoneInfo("UTC"), "UTC"
+    local = [as_utc(c).astimezone(tz) for (c,) in (await db.execute(select(conv_base.c.created_at))).all()]
+    per_day = Counter(d.date().isoformat() for d in local)
+    per_hour = Counter(d.hour for d in local)
+    leads = dict((await db.execute(select(Lead.status, func.count()).where(
+        Lead.tenant_id == t, Lead.created_at >= since).group_by(Lead.status))).all())
+    escalations = dict((await db.execute(select(EscalationRecord.status, func.count()).where(
+        EscalationRecord.tenant_id == t, EscalationRecord.created_at >= since).group_by(EscalationRecord.status))).all())
     ended = sum(v for k, v in by_status.items() if k != "active")
     return {
         "days": days, "total_conversations": total, "total_calls": call_total,
@@ -120,5 +204,8 @@ async def analytics_overview(days: int = Query(30, le=365), p: Principal = Depen
         "languages": {k or "unknown": v for k, v in by_lang.items()}, "channels": by_channel,
         "customer_satisfaction": round(float(csat), 2) if csat else None,
         "top_tools": [{"tool": n, "count": c} for n, c in tools],
-        "daily": [{"date": str(d), "count": c} for d, c in daily],
+        "daily": [{"date": d, "count": c} for d, c in sorted(per_day.items())],
+        "hours": [per_hour.get(h, 0) for h in range(24)], "timezone": tz_name,
+        "leads": {"total": sum(leads.values()), "by_status": leads},
+        "escalations": {"total": sum(escalations.values()), "by_status": escalations},
     }

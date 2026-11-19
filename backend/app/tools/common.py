@@ -5,6 +5,7 @@ import re
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.notifications.email import escalation_alert, lead_alert
 from app.knowledge.retrieval import search
 from app.models import Appointment, BusinessProfile, Customer, EscalationRecord, Lead
 from app.tools.registry import ToolContext, tool
@@ -111,6 +112,7 @@ async def create_customer_lead(ctx: ToolContext, args: CreateLeadArgs) -> dict:
                 location_preference=args.location_preference, status="qualified" if args.budget else "new")
     ctx.db.add(lead)
     await ctx.db.commit()
+    lead_alert(ctx.tenant_id, name=args.name, phone=phone, interest=args.interest, budget=args.budget)
     return {"ok": True, "lead_id": lead.id, "status": lead.status}
 
 
@@ -129,6 +131,7 @@ async def create_escalation(ctx: ToolContext, reason: str, summary: str, priorit
     )
     ctx.db.add(rec)
     await ctx.db.commit()
+    escalation_alert(ctx.tenant_id, reason=reason, priority=priority, summary=summary)
     ctx.state.escalated = True
     ctx.state.escalation_reason = reason
     ctx.events.append({"type": "handoff", "reason": reason, "priority": priority, "escalation_id": rec.id,

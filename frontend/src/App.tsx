@@ -1,15 +1,18 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import CustomCursor from './components/CustomCursor'
+import { ToastProvider } from './components/Toast'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import AppLayout from './layouts/AppLayout'
 import { BusinessProfile, Integrations, Tenants } from './pages/Admin'
 import Agents from './pages/Agents'
 import BusinessData from './pages/BusinessData'
 import { CallDetail, Calls } from './pages/Calls'
+import FollowUps from './pages/FollowUps'
 import Dashboard from './pages/Dashboard'
 import Knowledge from './pages/Knowledge'
 import Login from './pages/Login'
+import Team from './pages/Team'
 import VoiceConsole from './pages/VoiceConsole'
 
 function Protected({ children }: { children: ReactNode }) {
@@ -21,6 +24,7 @@ function Protected({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <CustomCursor />
       <BrowserRouter>
         <Routes>
@@ -32,7 +36,9 @@ export default function App() {
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="calls" element={<Calls />} />
             <Route path="calls/:id" element={<CallDetail />} />
+            <Route path="follow-ups" element={<FollowUps />} />
             <Route path="data" element={<BusinessData />} />
+            <Route path="team" element={<Team />} />
             <Route path="integrations" element={<Integrations />} />
             <Route path="business" element={<BusinessProfile />} />
             <Route path="tenants" element={<Tenants />} />
@@ -40,6 +46,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   )
 }

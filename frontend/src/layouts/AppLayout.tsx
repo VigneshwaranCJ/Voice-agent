@@ -9,6 +9,7 @@ const NAV = [
   { to: '/agents', label: 'Agents' },
   { to: '/knowledge', label: 'Knowledge' },
   { to: '/calls', label: 'Calls' },
+  { to: '/follow-ups', label: 'Follow-ups' },
   { to: '/data', label: 'Data' },
   { to: '/integrations', label: 'Integrations' },
   { to: '/business', label: 'Business' },
@@ -65,8 +66,10 @@ export default function AppLayout() {
   }, [menu])
 
   // Every page except Businesses works on one business; a platform admin must have one selected first.
-  const needsBusiness = isPlatform && !tenantId && loc.pathname !== '/tenants'
-  const nav = [...NAV, ...(isPlatform ? [{ to: '/tenants', label: 'Businesses', end: false }] : [])]
+  const needsBusiness = isPlatform && !tenantId && !['/tenants', '/team'].includes(loc.pathname)
+  const isAdmin = isPlatform || user?.role === 'tenant_admin'
+  const nav = [...NAV, ...(isAdmin ? [{ to: '/team', label: 'Team', end: false }] : []),
+    ...(isPlatform ? [{ to: '/tenants', label: 'Businesses', end: false }] : [])]
   const initials = (user?.email ?? '?').slice(0, 1).toUpperCase()
 
   return (
