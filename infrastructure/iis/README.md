@@ -28,6 +28,8 @@ This creates `deploy\kural-iis\` and `deploy\kural-iis.zip`. `deploy\` is git-ig
 - **Before uploading:** fill in `SARVAM_API_KEY`, `CORS_ORIGINS`, `BOOTSTRAP_ADMIN_EMAIL` and
   `BOOTSTRAP_ADMIN_PASSWORD` (12+ characters) in `deploy\kural-iis\.env`, then run the script again to
   rebuild the zip. Rebuilds keep the existing `.env`.
+- **More admins:** add numbered pairs, `BOOTSTRAP_ADMIN_EMAIL_2` / `BOOTSTRAP_ADMIN_PASSWORD_2` and so on
+  up to `_10`. Each is created on the next start if it doesn't exist yet; existing users are never changed.
 
 ## Deploy
 
