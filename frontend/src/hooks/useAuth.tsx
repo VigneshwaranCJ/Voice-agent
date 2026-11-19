@@ -8,6 +8,8 @@ interface AuthCtx {
   tenants: Tenant[]
   tenantId: string | null
   setTenantId: (id: string) => void
+  /** Reload the business list, e.g. after creating one; selects the first if none is selected. */
+  refreshTenants: () => Promise<void>
   login: (email: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -51,12 +53,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/login'
   }
 
+  const refreshTenants = useCallback(async () => { if (user) await loadTenants(user) }, [user, loadTenants])
+
   const setTenantId = (id: string) => {
     if (user?.role === 'platform_admin') session.tenantId = id
     setTid(id)
   }
 
-  return <Ctx.Provider value={{ user, loading, tenants, tenantId, setTenantId, login, logout }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ user, loading, tenants, tenantId, setTenantId, refreshTenants, login, logout }}>{children}</Ctx.Provider>
 }
 
 export function useAuth() {

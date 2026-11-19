@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import DB, Principal, audit, get_principal
 from app.models import Tenant, User
-from app.schemas.api import LoginIn, TokenOut
-from app.security.crypto import create_access_token, verify_password
+from app.schemas.api import ChangePasswordIn, LoginIn, TokenOut
+from app.security.crypto import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -40,3 +40,23 @@ async def me(p: Principal = Depends(get_principal), db: AsyncSession = DB):
         raise HTTPException(404, "User not found")
     tenant = await db.get(Tenant, u.tenant_id) if u.tenant_id else None
     return _user_dict(u, tenant)
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(body: ChangePasswordIn, request: Request, p: Principal = Depends(get_principal),
+                          db: AsyncSession = DB):
+    """Change the signed-in user's own password. The user comes from the token, never from the body.
+
+    Sessions signed in elsewhere stay valid until their token expires (JWT_EXPIRE_MINUTES).
+    """
+    u = await db.get(User, p.user_id)
+    if not u or not u.is_active:
+        raise HTTPException(404, "User not found")
+    # 400, not 401: a wrong current password must not sign the user out of the dashboard.
+    if not verify_password(body.current_password, u.password_hash):
+        raise HTTPException(400, "Current password is incorrect")
+    if body.new_password == body.current_password:
+        raise HTTPException(400, "New password must be different from the current one")
+    u.password_hash = hash_password(body.new_password)
+    await audit(db, request, p, "change_password", "user", u.id)
+    await db.commit()

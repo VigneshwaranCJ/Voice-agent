@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import ChangePasswordDialog from '../components/ChangePasswordDialog'
 import { useAuth } from '../hooks/useAuth'
 
 const NAV = [
@@ -24,10 +25,32 @@ function Logo() {
   )
 }
 
+function PickBusiness({ hasAny, onOpenMenu }: { hasAny: boolean; onOpenMenu: () => void }) {
+  return (
+    <div className="card mx-auto max-w-xl py-12 text-center">
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+        {hasAny ? 'Choose a business' : 'Create your first business'}
+      </h1>
+      <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">
+        {hasAny
+          ? 'Agents, calls, knowledge and data belong to a business. Pick one from the account menu to manage it.'
+          : 'Agents, calls, knowledge and data belong to a business. Add one to get started, then create its voice agent under Agents.'}
+      </p>
+      <div className="mt-6">
+        {hasAny
+          ? <button className="btn" onClick={onOpenMenu}>Choose business</button>
+          : <NavLink to="/tenants" className="btn">Create a business</NavLink>}
+      </div>
+    </div>
+  )
+}
+
 export default function AppLayout() {
   const { user, tenants, tenantId, setTenantId, logout } = useAuth()
   const isPlatform = user?.role === 'platform_admin'
   const [menu, setMenu] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+  const closePasswordDialog = useCallback(() => setChangingPassword(false), [])
   const menuRef = useRef<HTMLDivElement>(null)
   const loc = useLocation()
 
@@ -41,6 +64,8 @@ export default function AppLayout() {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
   }, [menu])
 
+  // Every page except Businesses works on one business; a platform admin must have one selected first.
+  const needsBusiness = isPlatform && !tenantId && loc.pathname !== '/tenants'
   const nav = [...NAV, ...(isPlatform ? [{ to: '/tenants', label: 'Businesses', end: false }] : [])]
   const initials = (user?.email ?? '?').slice(0, 1).toUpperCase()
 
@@ -81,6 +106,8 @@ export default function AppLayout() {
                   </div>
                 )}
                 <div className="my-1 h-px bg-black/5" />
+                <button role="menuitem" onClick={() => { setMenu(false); setChangingPassword(true) }}
+                  className="w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-900/[0.05]">Change password</button>
                 <button role="menuitem" onClick={logout} className="w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-900/[0.05]">Sign out</button>
               </div>
             )}
@@ -89,9 +116,10 @@ export default function AppLayout() {
       </header>
       <main className="mx-auto max-w-6xl px-5 pb-24 pt-12">
         <div key={`${tenantId ?? 'none'}:${loc.pathname}`} className="animate-fade">
-          <Outlet key={tenantId ?? 'none'} />
+          {needsBusiness ? <PickBusiness hasAny={tenants.length > 0} onOpenMenu={() => setMenu(true)} /> : <Outlet key={tenantId ?? 'none'} />}
         </div>
       </main>
+      {changingPassword && <ChangePasswordDialog onClose={closePasswordDialog} />}
     </div>
   )
 }

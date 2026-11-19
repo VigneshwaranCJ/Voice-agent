@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Badge, Empty, ErrorNote, PageHeader, fmtDate } from '../components/ui'
 import { useApi } from '../hooks/useApi'
+import { useAuth } from '../hooks/useAuth'
 import { api } from '../services/api'
 import type { Tenant } from '../types'
 
@@ -88,6 +89,7 @@ export function Integrations() {
 
 export function Tenants() {
   const { data, reload, error } = useApi<Tenant[]>('/tenants')
+  const { refreshTenants } = useAuth()
   const { data: ind } = useApi<{ available: { key: string; label: string }[]; planned: { key: string; label: string }[] }>('/industries')
   const [f, setF] = useState({ name: '', slug: '', industry: 'custom', admin_email: '', admin_password: '' })
   const [err, setErr] = useState<string | null>(null)
@@ -96,6 +98,7 @@ export function Tenants() {
     try {
       await api('/tenants', { method: 'POST', json: { ...f, admin_email: f.admin_email || null, admin_password: f.admin_password || null } })
       setF({ name: '', slug: '', industry: 'custom', admin_email: '', admin_password: '' }); reload()
+      await refreshTenants() // the account menu's business switcher picks it up (and selects it if none was)
     } catch (e) { setErr((e as Error).message) }
   }
   return (

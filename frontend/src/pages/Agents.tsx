@@ -1,17 +1,40 @@
-import { useEffect, useState } from 'react'
-import { Badge, ErrorNote, PageHeader } from '../components/ui'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Badge, Empty, ErrorNote, PageHeader } from '../components/ui'
 import { useApi } from '../hooks/useApi'
+import { useAuth } from '../hooks/useAuth'
 import { api } from '../services/api'
 import { LANGUAGES, type Agent, type AgentConfig, type ToolInfo, type VoiceProfile } from '../types'
 
 export default function Agents() {
-  const { data: agents, reload } = useApi<Agent[]>('/agents')
+  const { user } = useAuth()
+  const { data: agents, reload, error } = useApi<Agent[]>('/agents')
   const [selected, setSelected] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const canCreate = user?.role !== 'tenant_agent' // creating agents needs a business admin or platform admin
   useEffect(() => { if (agents?.length && !selected) setSelected(agents[0].id) }, [agents, selected])
+
+  const created = (a: Agent) => { setCreating(false); setSelected(a.id); reload() }
+  const newButton = canCreate && <button className="btn" onClick={() => setCreating(true)}>New agent</button>
+
+  if (agents && !agents.length && !creating) {
+    return (
+      <div>
+        <PageHeader eyebrow="Configure" title="Agents" subtitle="Each agent answers calls for this business in its own voice and languages." />
+        <ErrorNote error={error} />
+        <Empty>
+          <div>This business has no agents yet.</div>
+          {canCreate ? <div className="mt-4">{newButton}</div> : <div className="mt-1">Ask a business admin to create one.</div>}
+        </Empty>
+      </div>
+    )
+  }
   return (
     <div>
-      <PageHeader eyebrow="Configure" title="Agents" subtitle="Personality, instructions, voice, languages and tools per agent. Saving creates a new config version." />
-      <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
+      <PageHeader eyebrow="Configure" title="Agents" subtitle="Personality, instructions, voice, languages and tools per agent. Saving creates a new config version."
+        actions={!creating ? newButton : undefined} />
+      <ErrorNote error={error} />
+      {creating && <NewAgentForm onCreated={created} onCancel={() => setCreating(false)} />}
+      <div className={`grid gap-6 lg:grid-cols-[16rem_1fr] ${creating ? 'hidden' : ''}`}>
         <div className="space-y-2">
           {agents?.map((a) => (
             <button key={a.id} onClick={() => setSelected(a.id)}
@@ -137,5 +160,77 @@ function AgentEditor({ id, onSaved }: { id: string; onSaved: () => void }) {
       </div>
       <button className="btn" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
     </div>
+  )
+}
+
+/** Creates an agent for the selected business; tools default to the industry's standard set on the server. */
+function NewAgentForm({ onCreated, onCancel }: { onCreated: (a: Agent) => void; onCancel: () => void }) {
+  const { tenants, tenantId } = useAuth()
+  const { data: industries } = useApi<{ available: { key: string; label: string }[] }>('/industries')
+  const { data: profiles } = useApi<VoiceProfile[]>('/voice-profiles')
+  const businessIndustry = tenants.find((t) => t.id === tenantId)?.industry ?? 'custom'
+  const [name, setName] = useState('')
+  const [persona, setPersona] = useState('Priya')
+  const [industry, setIndustry] = useState<string | null>(null)
+  const [languages, setLanguages] = useState<string[]>(['en-IN', 'ta-IN'])
+  const [defaultLanguage, setDefaultLanguage] = useState('en-IN')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  // Default to the business's own industry when it has a module; otherwise the generic one.
+  const available = industries?.available ?? []
+  const chosenIndustry = industry ?? (available.some((i) => i.key === businessIndustry) ? businessIndustry : 'custom')
+
+  const toggleLang = (code: string) => {
+    const next = languages.includes(code) ? languages.filter((l) => l !== code) : [...languages, code]
+    setLanguages(next)
+    if (!next.includes(defaultLanguage) && next.length) setDefaultLanguage(next[0])
+  }
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setErr(null)
+    if (!languages.length) return setErr('Pick at least one language.')
+    setBusy(true)
+    try {
+      const agent = await api<Agent>('/agents', { method: 'POST', json: {
+        name: name.trim(), industry: chosenIndustry, languages, default_language: defaultLanguage,
+        voice_profile_id: profiles?.[0]?.id ?? null, config: { persona_name: persona.trim() || 'Priya' },
+      } })
+      onCreated(agent)
+    } catch (e2) { setErr((e2 as Error).message) } finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={submit} className="card mb-6 space-y-4">
+      <div className="text-sm font-semibold">New agent</div>
+      <ErrorNote error={err} />
+      <div className="grid gap-4 md:grid-cols-2">
+        <div><label className="label" htmlFor="na-name">Agent name</label>
+          <input id="na-name" className="input" required maxLength={200} placeholder="e.g. Front desk" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></div>
+        <div><label className="label" htmlFor="na-persona">Persona name (how the agent introduces itself)</label>
+          <input id="na-persona" className="input" maxLength={100} value={persona} onChange={(e) => setPersona(e.target.value)} /></div>
+        <div><label className="label" htmlFor="na-industry">Industry</label>
+          <select id="na-industry" className="input" value={chosenIndustry} onChange={(e) => setIndustry(e.target.value)}>
+            {available.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">Sets the agent's tools and built-in instructions.</p></div>
+        <div><label className="label" htmlFor="na-default">Default language</label>
+          <select id="na-default" className="input" value={defaultLanguage} onChange={(e) => setDefaultLanguage(e.target.value)}>
+            {languages.map((l) => <option key={l} value={l}>{LANGUAGES[l] ?? l}</option>)}
+          </select></div>
+        <div className="md:col-span-2"><span className="label">Languages</span>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(LANGUAGES).map(([code, label]) => (
+              <label key={code} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={languages.includes(code)} onChange={() => toggleLang(code)} />{label}</label>
+            ))}
+          </div></div>
+      </div>
+      <p className="text-xs text-slate-500">After creating, you can set its personality, greetings, voice and tools here.</p>
+      <div className="flex gap-2">
+        <button type="submit" className="btn" disabled={busy || !name.trim()}>{busy ? 'Creating…' : 'Create agent'}</button>
+        <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
   )
 }

@@ -13,6 +13,11 @@ class LoginIn(BaseModel):
     password: str
 
 
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
+
+
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
