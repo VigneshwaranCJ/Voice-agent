@@ -139,6 +139,10 @@ export class VoiceClient {
       this.out = { ctx, analyser, buf: new Float32Array(analyser.fftSize) }
     } catch { this.out = null }
     if (withMic) {
+      // Browsers only expose the microphone on HTTPS (or localhost); on plain http:// mediaDevices is undefined.
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('The microphone needs a secure connection. Open this page with https:// (or use Text only).')
+      }
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       })
