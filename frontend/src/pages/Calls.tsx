@@ -132,7 +132,7 @@ export function CallDetail() {
     <div>
       <PageHeader eyebrow="Transcript" title="Conversation" subtitle={`${fmtDate(c.created_at)} · ${c.channel.replace('_', ' ')}`}
         actions={<Link to="/calls" className="btn-ghost">← All calls</Link>} />
-      <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="card space-y-3">
           {data.messages.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : ''}`}>

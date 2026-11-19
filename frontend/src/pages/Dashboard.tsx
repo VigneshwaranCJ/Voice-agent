@@ -233,7 +233,7 @@ export default function Dashboard() {
             <Stat label="Customer satisfaction" value={data.customer_satisfaction ?? '—'} hint="Post-call rating (Phase 5)" icon={Icons.star} tone="amber" />
           </div>
 
-          <div className="stagger mt-6 grid gap-4 lg:grid-cols-3">
+          <div className="stagger mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Panel className="lg:col-span-2" title="Conversations per day" subtitle={`${data.daily.reduce((a, d) => a + d.count, 0)} in the last ${DAYS} days`}>
               <DailyChart daily={data.daily} />
             </Panel>

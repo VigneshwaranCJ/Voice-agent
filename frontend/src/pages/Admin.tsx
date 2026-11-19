@@ -31,7 +31,7 @@ export function BusinessProfile() {
       <PageHeader eyebrow="Settings" title="Business Profile" subtitle="Business context given to the agent on every call." />
       <ErrorNote error={err} />
       {msg && <div className="mb-4 text-sm text-emerald-700">{msg}</div>}
-      <div className="card grid gap-4 md:grid-cols-2">
+      <div className="card grid grid-cols-1 gap-4 md:grid-cols-2">
         {field('display_name', 'Display name')}{field('phone', 'Phone')}{field('email', 'Email')}{field('website', 'Website')}{field('timezone', 'Timezone')}
         <div className="md:col-span-2"><label className="label">Description</label><textarea className="input h-20" value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} /></div>
         <div className="md:col-span-2"><label className="label">Services (comma separated)</label>
@@ -62,7 +62,7 @@ export function Integrations() {
     <div className="max-w-4xl">
       <PageHeader eyebrow="Connections" title="Integrations" subtitle="Connect the business's own database or API. Credentials are encrypted at rest and never shown again." />
       <ErrorNote error={err || error} />
-      <div className="card mb-6 grid gap-3 md:grid-cols-2">
+      <div className="card mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div><label className="label">Name</label><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
         <div><label className="label">Type</label><select className="input" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
           <option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option><option value="rest_api">REST API</option></select></div>
@@ -108,7 +108,7 @@ export function Tenants() {
     <div className="max-w-4xl">
       <PageHeader eyebrow="Platform" title="All Businesses" subtitle="Onboard a business without code changes. Then create its agent under Agents." />
       <ErrorNote error={err || error} />
-      <div className="card mb-6 grid gap-3 md:grid-cols-2">
+      <div className="card mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div><label className="label">Business name</label><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') })} /></div>
         <div><label className="label">Slug</label><input className="input" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} /></div>
         <div><label className="label">Industry</label><select className="input" value={f.industry} onChange={(e) => setF({ ...f, industry: e.target.value })}>

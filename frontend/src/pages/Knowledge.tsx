@@ -33,11 +33,11 @@ export default function Knowledge() {
     <div>
       <PageHeader eyebrow="Knowledge" title="Knowledge Base" subtitle="Documents, FAQs and policies the agent can search. Retrieval is scoped to this business only." />
       <ErrorNote error={err || error} />
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="card">
           <div className="mb-2 text-sm font-semibold">Upload document</div>
           <p className="mb-3 text-xs text-slate-500">PDF, DOCX, TXT, MD or CSV (max 15 MB).</p>
-          <input type="file" accept=".pdf,.docx,.txt,.md,.csv" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          <input type="file" className="block w-full max-w-full text-sm" accept=".pdf,.docx,.txt,.md,.csv" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         </div>
         <div className="card space-y-2">
           <div className="text-sm font-semibold">Add FAQ / policy text</div>

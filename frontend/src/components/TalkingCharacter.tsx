@@ -366,7 +366,7 @@ export default function TalkingCharacter(props: Props) {
               <h2 className="text-[17px] font-semibold tracking-tight text-slate-900">Character</h2>
               <button className="rounded-full px-2 py-1 text-[15px] font-semibold text-brand-500 hover:bg-brand-50" onClick={() => setEditing(false)}>Done</button>
             </div>
-            <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:overflow-hidden">
+            <div className="grid grid-cols-1 min-h-0 flex-1 overflow-y-auto md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:overflow-hidden">
               {/* live preview */}
               <div className="relative flex flex-col items-center justify-center gap-5 px-6 py-8">
                 <div aria-hidden className="pointer-events-none absolute inset-0 opacity-70"

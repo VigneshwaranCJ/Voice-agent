@@ -126,7 +126,7 @@ function AddMember({ roles, onAdd }: { roles: Member['role'][]; onAdd: (b: { ema
   return (
     <form onSubmit={submit} className="card mb-6 space-y-4">
       <div className="text-sm font-semibold">Add a person</div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div><label className="label" htmlFor="tm-email">Email</label>
           <input id="tm-email" type="email" required className="input" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
         <div><label className="label" htmlFor="tm-name">Name</label>
