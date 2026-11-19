@@ -108,6 +108,7 @@ export class VoiceClient {
   private node: AudioWorkletNode | null = null
   private player: UtterancePlayer | null = null
   private muted = false
+  private hungUp = false // the caller ended the call, so a close is expected
   private ev: VoiceEvents
   private out: { ctx: AudioContext; analyser: AnalyserNode; buf: Float32Array<ArrayBuffer> } | null = null
 
@@ -160,9 +161,19 @@ export class VoiceClient {
       src.connect(this.node)
     }
     this.ws = new WebSocket(url)
-    this.ws.onmessage = (m) => this.handle(JSON.parse(m.data))
-    this.ws.onclose = () => { this.ev.onState?.('ended'); this.cleanupAudio() }
-    this.ws.onerror = () => this.ev.onError?.('Connection error')
+    let received = false
+    this.ws.onmessage = (m) => { received = true; this.handle(JSON.parse(m.data)) }
+    this.ws.onclose = (e) => {
+      // 1000 = normal end, 4xxx = the server ended the call on purpose (and already sent a reason).
+      if (!this.hungUp && e.code !== 1000 && e.code < 4000) {
+        this.ev.onError?.(received
+          ? `The connection to the voice server was lost (code ${e.code}).`
+          : `The call could not connect: the voice server closed the connection before sending anything (code ${e.code}). `
+            + 'This usually means the web host is not passing WebSocket traffic through.')
+      }
+      this.ev.onState?.('ended'); this.cleanupAudio()
+    }
+    this.ws.onerror = () => { if (!received) return; this.ev.onError?.('Connection error') } // onclose explains early failures
   }
 
   setMuted(m: boolean) { this.muted = m }
@@ -176,6 +187,7 @@ export class VoiceClient {
   }
 
   hangup() {
+    this.hungUp = true
     this.send({ type: 'stop' })
     this.ws?.close()
     this.cleanupAudio()
