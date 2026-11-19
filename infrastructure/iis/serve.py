@@ -1,7 +1,8 @@
 """Entry point for Windows IIS hosting through HttpPlatformHandler (see web.config next to this file).
 
-IIS starts `python -m serve` and passes the port to listen on in HTTP_PLATFORM_PORT. The backend and the
-built dashboard run in this one process: settings come from the .env file in this folder.
+IIS starts `python -m serve` and passes the port to listen on in HTTP_PLATFORM_PORT (HttpPlatformHandler,
+web.config) or ASPNETCORE_PORT (ASP.NET Core Module, web.ancm.config). The backend and the built dashboard
+run in this one process: settings come from the .env file in this folder.
 
 On start, platform admins are created from .env pairs (idempotent; existing users are left untouched):
 
@@ -67,7 +68,8 @@ def main() -> None:
     uvicorn.run(
         "app.main:app",
         host="127.0.0.1",  # IIS forwards to this port; it is not reachable from outside
-        port=int(os.getenv("HTTP_PLATFORM_PORT", "8000")),
+        # HttpPlatformHandler passes HTTP_PLATFORM_PORT; the ASP.NET Core Module (web.ancm.config) passes ASPNETCORE_PORT.
+        port=int(os.getenv("HTTP_PLATFORM_PORT") or os.getenv("ASPNETCORE_PORT") or "8000"),
         proxy_headers=True,
         forwarded_allow_ips="127.0.0.1",
         ws="websockets",

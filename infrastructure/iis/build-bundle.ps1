@@ -54,7 +54,7 @@ Write-Host "3/5 Backend code"
 robocopy "$Repo\backend\app" "$Out\app" /E /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
 robocopy "$Repo\backend\migrations" "$Out\migrations" /E /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
 Copy-Item "$Repo\backend\alembic.ini" $Out
-Copy-Item "$PSScriptRoot\serve.py", "$PSScriptRoot\web.config" $Out
+Copy-Item "$PSScriptRoot\serve.py", "$PSScriptRoot\web.config", "$PSScriptRoot\web.ancm.config" $Out
 New-Item -ItemType Directory -Force "$Out\App_Data\logs" | Out-Null
 
 Write-Host "4/5 Dashboard"
