@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,10 @@ class Settings(BaseSettings):
 
     # Database / cache
     database_url: str = "sqlite+aiosqlite:///./voicecare.db"
+    # Connections per app process. Keep small on hosts that run several copies against a pooled database
+    # (e.g. Catalyst AppSail + Supabase): copies x (pool_size + max_overflow) must stay under the DB limit.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     redis_url: str | None = None
     # Single-server hosts without PostgreSQL (e.g. Windows/IIS shared hosting) may opt in to SQLite.
     # SQLite allows one writer at a time: run exactly one app process and back up the .db file.
@@ -58,6 +62,17 @@ class Settings(BaseSettings):
 
     # Seed demo data (two demo businesses) on first start in development
     seed_demo_data: bool = True
+
+    @field_validator("database_url")
+    @classmethod
+    def _asyncpg_url(cls, v: str) -> str:
+        """Accept the plain postgres:// / postgresql://?sslmode=require strings hosts like Supabase give out."""
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                v = "postgresql+asyncpg://" + v[len(prefix):]
+        if v.startswith("postgresql+asyncpg://") and "sslmode=" in v:
+            v = v.replace("sslmode=", "ssl=")  # asyncpg's name for the same option
+        return v
 
     @property
     def is_production(self) -> bool:

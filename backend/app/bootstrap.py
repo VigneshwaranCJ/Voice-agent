@@ -34,6 +34,35 @@ async def bootstrap(email: str, password: str, full_name: str = "Platform Admin"
         return not exists
 
 
+MAX_ENV_ADMINS = 10
+
+
+def admin_pairs_from_env() -> list[tuple[str, str, str]]:
+    """(suffix, email, password) for each BOOTSTRAP_ADMIN_EMAIL[_n] / BOOTSTRAP_ADMIN_PASSWORD[_n] pair (n = 2..10)."""
+    pairs = []
+    for n in range(1, MAX_ENV_ADMINS + 1):
+        suffix = "" if n == 1 else f"_{n}"
+        email = (os.getenv(f"BOOTSTRAP_ADMIN_EMAIL{suffix}") or "").strip().lower()
+        password = os.getenv(f"BOOTSTRAP_ADMIN_PASSWORD{suffix}") or ""
+        if email and password:
+            pairs.append((suffix, email, password))
+    return pairs
+
+
+async def bootstrap_admins_from_env() -> None:
+    """Create the platform admins listed in the environment (idempotent: existing users are never changed).
+    Used by hosting entrypoints that have no shell for `python -m app.bootstrap`. Tables must already exist."""
+    from app.core.logging import log
+
+    for suffix, email, password in admin_pairs_from_env():
+        if len(password) < MIN_PASSWORD:
+            log.error("bootstrap_admin_skipped", email=email,
+                      reason=f"BOOTSTRAP_ADMIN_PASSWORD{suffix} must be at least {MIN_PASSWORD} characters")
+            continue
+        created = await bootstrap(email, password)
+        log.info("bootstrap_admin", created=created, email=email)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Create reference data and the first platform admin.")
     ap.add_argument("--email", required=True)
